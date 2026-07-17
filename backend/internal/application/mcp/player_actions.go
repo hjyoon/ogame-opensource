@@ -204,6 +204,9 @@ func (s Service) callStartResearch(ctx context.Context, access domainmcp.Access,
 }
 
 func (s Service) callMutatePlanet(ctx context.Context, access domainmcp.Access, arguments map[string]any) (domainmcp.ToolCallResult, error) {
+	if _, supplied := arguments["password"]; supplied {
+		return domainmcp.ToolCallResult{}, domainmcp.ErrInvalidParams
+	}
 	action, _ := optionalStringArgument(arguments, "action")
 	action = strings.ToLower(strings.TrimSpace(action))
 	planetID, err := optionalNonNegativeIntArgument(arguments, "planetId")
@@ -222,8 +225,7 @@ func (s Service) callMutatePlanet(ctx context.Context, access domainmcp.Access, 
 		return domainmcp.ToolCallResult{}, domainmcp.ErrInvalidParams
 	}
 	name, _ := optionalStringArgument(arguments, "name")
-	password, _ := optionalStringArgument(arguments, "password")
-	if action == "rename" && strings.TrimSpace(name) == "" || action == "delete" && strings.TrimSpace(password) == "" {
+	if action == "rename" && strings.TrimSpace(name) == "" {
 		return domainmcp.ToolCallResult{}, domainmcp.ErrInvalidParams
 	}
 	result, execute, err := preparePlayerAction("mutate_planet", access, action, planetID, targetID, arguments)
@@ -237,7 +239,9 @@ func (s Service) callMutatePlanet(ctx context.Context, access domainmcp.Access, 
 		}
 		result.Details = map[string]any{"planetId": overview.CurrentPlanet.ID, "name": overview.CurrentPlanet.Name}
 	} else {
-		overview, issue, err := s.playerActions.Overview.DeletePlanet(ctx, appgame.OverviewDeleteQuery{PlayerID: access.PlayerID, PlanetID: planetID, DeleteID: targetID, Password: password})
+		overview, issue, err := s.playerActions.Overview.DeletePlanet(ctx, appgame.OverviewDeleteQuery{
+			PlayerID: access.PlayerID, PlanetID: planetID, DeleteID: targetID, SkipPasswordVerification: true,
+		})
 		if err != nil {
 			return domainmcp.ToolCallResult{}, err
 		}
@@ -574,6 +578,9 @@ func argumentPresent(arguments map[string]any, key string) bool {
 }
 
 func accountOptionsMutation(arguments map[string]any, current domaingame.Options) (string, domaingame.OptionsMutation, error) {
+	if _, supplied := arguments["oldPassword"]; supplied {
+		return "", domaingame.OptionsMutation{}, domainmcp.ErrInvalidParams
+	}
 	action, err := optionalStringArgument(arguments, "action")
 	if err != nil {
 		return "", domaingame.OptionsMutation{}, err
@@ -620,22 +627,16 @@ func accountOptionsMutation(arguments map[string]any, current domaingame.Options
 			err = domainmcp.ErrInvalidParams
 		}
 	case "password":
-		mutation.OldPassword, err = optionalStringArgument(arguments, "oldPassword")
-		if err == nil {
-			mutation.NewPassword, err = optionalStringArgument(arguments, "newPassword")
-		}
+		mutation.NewPassword, err = optionalStringArgument(arguments, "newPassword")
 		if err == nil {
 			mutation.NewPasswordRepeat, err = optionalStringArgument(arguments, "newPasswordRepeat")
 		}
-		if mutation.OldPassword == "" || mutation.NewPassword == "" || mutation.NewPasswordRepeat == "" {
+		if mutation.NewPassword == "" || mutation.NewPasswordRepeat == "" {
 			err = domainmcp.ErrInvalidParams
 		}
 	case "email":
-		mutation.OldPassword, err = optionalStringArgument(arguments, "oldPassword")
-		if err == nil {
-			mutation.Email, err = optionalStringArgument(arguments, "email")
-		}
-		if mutation.OldPassword == "" || strings.TrimSpace(mutation.Email) == "" {
+		mutation.Email, err = optionalStringArgument(arguments, "email")
+		if strings.TrimSpace(mutation.Email) == "" {
 			err = domainmcp.ErrInvalidParams
 		}
 	case "vacation":
@@ -688,7 +689,9 @@ func (s Service) callUpdateAccountOptions(ctx context.Context, access domainmcp.
 		result.Details = safeOptionsDetails(current)
 		return playerActionToolResult("accountOptionsMutation", result), err
 	}
-	updated, issue, err := s.playerActions.Options.UpdateOptions(ctx, appgame.OptionsUpdateQuery{PlayerID: access.PlayerID, PlanetID: planetID, Mutation: mutation})
+	updated, issue, err := s.playerActions.Options.UpdateOptions(ctx, appgame.OptionsUpdateQuery{
+		PlayerID: access.PlayerID, PlanetID: planetID, Mutation: mutation, SkipPasswordVerification: true,
+	})
 	if err != nil {
 		return domainmcp.ToolCallResult{}, err
 	}
@@ -777,8 +780,8 @@ func startResearchTool() domainmcp.Tool {
 }
 
 func mutatePlanetTool() domainmcp.Tool {
-	return playerMutationTool("mutate_planet", "Rename or abandon planet", "Rename an owned planet or abandon it after password and fleet validation.", map[string]any{
-		"planetId": map[string]any{"type": "integer", "minimum": 1}, "action": map[string]any{"type": "string", "enum": []string{"rename", "delete"}}, "targetPlanetId": map[string]any{"type": "integer", "minimum": 1}, "name": map[string]any{"type": "string"}, "password": map[string]any{"type": "string"},
+	return playerMutationTool("mutate_planet", "Rename or abandon planet", "Rename an owned planet or abandon it after fleet validation. The scoped bearer token authorizes the action; no account password is accepted.", map[string]any{
+		"planetId": map[string]any{"type": "integer", "minimum": 1}, "action": map[string]any{"type": "string", "enum": []string{"rename", "delete"}}, "targetPlanetId": map[string]any{"type": "integer", "minimum": 1}, "name": map[string]any{"type": "string"},
 	}, []string{"planetId", "action"}, "planetMutation")
 }
 
@@ -813,8 +816,8 @@ func mutateAllianceTool() domainmcp.Tool {
 }
 
 func updateAccountOptionsTool() domainmcp.Tool {
-	return playerMutationTool("update_account_options", "Update account options", "Update settings, name, password, email, vacation mode, deletion state, or activation mail while preserving omitted values.", map[string]any{
-		"planetId": map[string]any{"type": "integer", "minimum": 0}, "action": map[string]any{"type": "string", "enum": []string{"settings", "rename", "password", "email", "vacation", "deletion", "resend_activation"}}, "name": map[string]any{"type": "string"}, "oldPassword": map[string]any{"type": "string"}, "newPassword": map[string]any{"type": "string"}, "newPasswordRepeat": map[string]any{"type": "string"}, "email": map[string]any{"type": "string"}, "enabled": map[string]any{"type": "boolean"}, "language": map[string]any{"type": "string"}, "skinPath": map[string]any{"type": "string"}, "useSkin": map[string]any{"type": "boolean"}, "deactivateIp": map[string]any{"type": "boolean"}, "sortBy": map[string]any{"type": "integer", "minimum": 0}, "sortOrder": map[string]any{"type": "integer", "minimum": 0}, "maxSpy": map[string]any{"type": "integer", "minimum": 0}, "maxFleetMessages": map[string]any{"type": "integer", "minimum": 0}, "showEspionageButton": map[string]any{"type": "boolean"}, "showWriteMessage": map[string]any{"type": "boolean"}, "showBuddy": map[string]any{"type": "boolean"}, "showRocketAttack": map[string]any{"type": "boolean"}, "showViewReport": map[string]any{"type": "boolean"}, "doNotUseFolders": map[string]any{"type": "boolean"}, "feedEnabled": map[string]any{"type": "boolean"}, "feedType": map[string]any{"type": "string", "enum": []string{"rss", "atom"}}, "hideGoEmail": map[string]any{"type": "boolean"},
+	return playerMutationTool("update_account_options", "Update account options", "Update settings, name, password, email, vacation mode, deletion state, or activation mail while preserving omitted values. The scoped bearer token replaces current-password reauthentication.", map[string]any{
+		"planetId": map[string]any{"type": "integer", "minimum": 0}, "action": map[string]any{"type": "string", "enum": []string{"settings", "rename", "password", "email", "vacation", "deletion", "resend_activation"}}, "name": map[string]any{"type": "string"}, "newPassword": map[string]any{"type": "string"}, "newPasswordRepeat": map[string]any{"type": "string"}, "email": map[string]any{"type": "string"}, "enabled": map[string]any{"type": "boolean"}, "language": map[string]any{"type": "string"}, "skinPath": map[string]any{"type": "string"}, "useSkin": map[string]any{"type": "boolean"}, "deactivateIp": map[string]any{"type": "boolean"}, "sortBy": map[string]any{"type": "integer", "minimum": 0}, "sortOrder": map[string]any{"type": "integer", "minimum": 0}, "maxSpy": map[string]any{"type": "integer", "minimum": 0}, "maxFleetMessages": map[string]any{"type": "integer", "minimum": 0}, "showEspionageButton": map[string]any{"type": "boolean"}, "showWriteMessage": map[string]any{"type": "boolean"}, "showBuddy": map[string]any{"type": "boolean"}, "showRocketAttack": map[string]any{"type": "boolean"}, "showViewReport": map[string]any{"type": "boolean"}, "doNotUseFolders": map[string]any{"type": "boolean"}, "feedEnabled": map[string]any{"type": "boolean"}, "feedType": map[string]any{"type": "string", "enum": []string{"rss", "atom"}}, "hideGoEmail": map[string]any{"type": "boolean"},
 	}, []string{"action"}, "accountOptionsMutation")
 }
 

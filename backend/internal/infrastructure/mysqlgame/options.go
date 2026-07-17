@@ -206,7 +206,7 @@ func (r OptionsRepository) updateOptions(ctx context.Context, query appgame.Opti
 	disableUntil := int64(0)
 	issue := domaingame.OptionsSavedIssue()
 	mailRequested := false
-	if currentIssue, err := r.applyIdentityMutations(ctx, usersTable, queueTable, query.PlayerID, normalized.OptionsMutation, current); err != nil {
+	if currentIssue, err := r.applyIdentityMutations(ctx, usersTable, queueTable, query.PlayerID, normalized.OptionsMutation, current, query.SkipPasswordVerification); err != nil {
 		return domaingame.Options{}, nil, err
 	} else if currentIssue != nil {
 		issue = currentIssue
@@ -311,7 +311,7 @@ func (r OptionsRepository) updateUnvalidatedOptions(ctx context.Context, query a
 	if mutation.ResendActivation {
 		issue = domaingame.OptionsActivationResentIssue()
 	} else if email := strings.TrimSpace(mutation.Email); email != "" && email != current.User.Email {
-		if current.User.PasswordHash != legacyPasswordHash(mutation.OldPassword, r.secret) {
+		if !query.SkipPasswordVerification && current.User.PasswordHash != legacyPasswordHash(mutation.OldPassword, r.secret) {
 			issue = domaingame.OptionsEmailNeedPasswordIssue()
 		} else {
 			pendingCurrent := current
@@ -507,7 +507,7 @@ func (r OptionsRepository) loadOptions(ctx context.Context, playerID int) (domai
 		nil
 }
 
-func (r OptionsRepository) applyIdentityMutations(ctx context.Context, usersTable string, queueTable string, playerID int, mutation domaingame.OptionsMutation, current domaingame.Options) (*domaingame.OptionsActionIssue, error) {
+func (r OptionsRepository) applyIdentityMutations(ctx context.Context, usersTable string, queueTable string, playerID int, mutation domaingame.OptionsMutation, current domaingame.Options, skipPasswordVerification bool) (*domaingame.OptionsActionIssue, error) {
 	if mutation.NameChangeRequested(current) {
 		exists, err := r.nameExists(ctx, usersTable, mutation.Name)
 		if err != nil {
@@ -536,15 +536,15 @@ func (r OptionsRepository) applyIdentityMutations(ctx context.Context, usersTabl
 		}
 		return domaingame.OptionsNameChangedIssue(), nil
 	}
-	return r.applyCredentialMutations(ctx, usersTable, queueTable, playerID, mutation, current)
+	return r.applyCredentialMutations(ctx, usersTable, queueTable, playerID, mutation, current, skipPasswordVerification)
 }
 
-func (r OptionsRepository) applyCredentialMutations(ctx context.Context, usersTable string, queueTable string, playerID int, mutation domaingame.OptionsMutation, current domaingame.Options) (*domaingame.OptionsActionIssue, error) {
+func (r OptionsRepository) applyCredentialMutations(ctx context.Context, usersTable string, queueTable string, playerID int, mutation domaingame.OptionsMutation, current domaingame.Options, skipPasswordVerification bool) (*domaingame.OptionsActionIssue, error) {
 	if issue := mutation.PasswordValidationIssue(); issue != nil {
 		return issue, nil
 	}
 	if mutation.PasswordChangeRequested() {
-		if current.User.PasswordHash != legacyPasswordHash(mutation.OldPassword, r.secret) {
+		if !skipPasswordVerification && current.User.PasswordHash != legacyPasswordHash(mutation.OldPassword, r.secret) {
 			return domaingame.OptionsPasswordWrongOldIssue(), nil
 		}
 		if _, err := r.execer.ExecContext(
@@ -561,7 +561,7 @@ func (r OptionsRepository) applyCredentialMutations(ctx context.Context, usersTa
 	if !mutation.EmailChangeRequested(current) {
 		return nil, nil
 	}
-	if current.User.PasswordHash != legacyPasswordHash(mutation.OldPassword, r.secret) {
+	if !skipPasswordVerification && current.User.PasswordHash != legacyPasswordHash(mutation.OldPassword, r.secret) {
 		return domaingame.OptionsEmailNeedPasswordIssue(), nil
 	}
 	if issue := mutation.EmailValidationIssue(current); issue != nil {

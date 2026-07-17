@@ -1152,6 +1152,29 @@ func TestOverviewRepositoryDeleteReturnsPasswordIssue(t *testing.T) {
 	}
 }
 
+func TestOverviewRepositoryTrustedDeleteSkipsPasswordVerification(t *testing.T) {
+	results := overviewResultsForPlanet(99, "Colony")
+	results = append(results,
+		fakeQueryResult{rows: fakeRowsFromValues([]any{"legor", int64(0), 0, 99, 99, 0, 0, 0})},
+		fakeQueryResult{rows: fakeRowsFromValues([]any{99, domaingame.PlanetTypePlanet, 1, 2, 3})},
+	)
+	runner := &fakeOverviewRunner{fakeQueryer: fakeQueryer{results: results}}
+	repository := NewOverviewRepositoryWithRunnerAndSecret(runner, runner, "ogame_", "secret")
+
+	_, issue, err := repository.DeletePlanet(context.Background(), appgame.OverviewDeleteQuery{
+		PlayerID:                 42,
+		PlanetID:                 99,
+		DeleteID:                 99,
+		SkipPasswordVerification: true,
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if issue == nil || issue.Code != domaingame.OverviewIssueHomePlanet || runner.execSQL != "" {
+		t.Fatalf("expected trusted authorization to reach normal planet validation, issue=%+v exec=%q", issue, runner.execSQL)
+	}
+}
+
 func TestOverviewRepositoryDeleteBlocksHomeAndFleet(t *testing.T) {
 	tests := []struct {
 		name    string

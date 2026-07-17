@@ -444,6 +444,35 @@ func TestOptionsRepositoryRejectsPasswordAndEmailCredentialErrors(t *testing.T) 
 	}
 }
 
+func TestOptionsRepositoryTrustedCredentialMutationsSkipCurrentPassword(t *testing.T) {
+	now := time.Unix(1_700_000_000, 0)
+	current := domaingame.NewOptions(domaingame.Overview{}, domaingame.OptionsUser{
+		Email:        "legor@example.test",
+		PlainEmail:   "permanent@example.test",
+		Validated:    true,
+		PasswordHash: legacyPasswordHash("oldpass123", "secret"),
+	}, domaingame.OptionsUniverse{Language: "en"}, domaingame.OptionsSettings{}, domaingame.OptionsAccount{}, 0)
+
+	passwordRunner := &fakeOptionsRunner{}
+	repository := NewOptionsRepositoryWithRunnerAndSecret(passwordRunner, passwordRunner, "ogame_", "secret", func() time.Time { return now })
+	issue, err := repository.applyCredentialMutations(context.Background(), "`ogame_users`", "`ogame_queue`", 42, domaingame.OptionsMutation{
+		NewPassword: "newpass123", NewPasswordRepeat: "newpass123",
+	}, current, true)
+	if err != nil || issue == nil || issue.Code != domaingame.OptionsIssuePasswordChanged ||
+		len(passwordRunner.execs) != 1 || passwordRunner.execs[0].args[0] != legacyPasswordHash("newpass123", "secret") {
+		t.Fatalf("unexpected trusted password change: issue=%+v err=%v execs=%+v", issue, err, passwordRunner.execs)
+	}
+
+	emailRunner := &fakeOptionsRunner{fakeQueryer: fakeQueryer{results: []fakeQueryResult{{rows: fakeRowsFromValues([]any{0})}}}}
+	repository = NewOptionsRepositoryWithRunnerAndSecret(emailRunner, emailRunner, "ogame_", "secret", func() time.Time { return now })
+	issue, err = repository.applyCredentialMutations(context.Background(), "`ogame_users`", "`ogame_queue`", 42, domaingame.OptionsMutation{
+		Email: "new@example.test",
+	}, current, true)
+	if err != nil || issue == nil || issue.Code != domaingame.OptionsIssueEmailChanged || len(emailRunner.execs) != 3 {
+		t.Fatalf("unexpected trusted email change: issue=%+v err=%v execs=%+v", issue, err, emailRunner.execs)
+	}
+}
+
 func TestOptionsRepositoryChangesEmailAndQueuesPermanentUpdate(t *testing.T) {
 	now := time.Unix(1_700_000_000, 0)
 	results := append(optionsReadResultsWithPassword(now, 0, 0, legacyPasswordHash("oldpass123", "secret")),
@@ -501,14 +530,15 @@ func TestOptionsRepositoryHandlesUnvalidatedAccountBranches(t *testing.T) {
 	now := time.Unix(1_700_000_000, 0)
 	passwordHash := legacyPasswordHash("oldpass123", "secret")
 	tests := []struct {
-		name       string
-		mutation   domaingame.OptionsMutation
-		extra      []fakeQueryResult
-		updated    string
-		wantIssue  string
-		wantExecs  int
-		wantQueued bool
-		wantMail   bool
+		name                     string
+		mutation                 domaingame.OptionsMutation
+		extra                    []fakeQueryResult
+		updated                  string
+		wantIssue                string
+		wantExecs                int
+		wantQueued               bool
+		wantMail                 bool
+		skipPasswordVerification bool
 	}{
 		{
 			name:      "resend activation",
@@ -546,6 +576,17 @@ func TestOptionsRepositoryHandlesUnvalidatedAccountBranches(t *testing.T) {
 			wantQueued: true,
 			wantMail:   true,
 		},
+		{
+			name:                     "trusted change email",
+			mutation:                 domaingame.OptionsMutation{Email: "new@example.test"},
+			extra:                    []fakeQueryResult{{rows: fakeRowsFromValues([]any{0})}},
+			updated:                  "new@example.test",
+			wantIssue:                domaingame.OptionsIssueEmailChanged,
+			wantExecs:                3,
+			wantQueued:               true,
+			wantMail:                 true,
+			skipPasswordVerification: true,
+		},
 	}
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
@@ -556,9 +597,10 @@ func TestOptionsRepositoryHandlesUnvalidatedAccountBranches(t *testing.T) {
 			repository := NewOptionsRepositoryWithRunnerAndSecret(runner, runner, "ogame_", "secret", func() time.Time { return now })
 
 			options, issue, err := repository.UpdateOptions(context.Background(), appgame.OptionsUpdateQuery{
-				PlayerID: 42,
-				PlanetID: 99,
-				Mutation: tt.mutation,
+				PlayerID:                 42,
+				PlanetID:                 99,
+				Mutation:                 tt.mutation,
+				SkipPasswordVerification: tt.skipPasswordVerification,
 			})
 			if err != nil || issue == nil || issue.Code != tt.wantIssue || options.User.Email != tt.updated || options.User.Validated {
 				t.Fatalf("unexpected unvalidated result options=%+v issue=%+v err=%v", options.User, issue, err)
@@ -684,7 +726,7 @@ func TestOptionsRepositoryIdentityMutationErrors(t *testing.T) {
 	mutation := domaingame.OptionsMutation{Name: "NewPilot"}
 
 	repository := NewOptionsRepositoryWithQueryer(&fakeQueryer{results: []fakeQueryResult{{err: errors.New("name query failed")}}}, "ogame_", nil)
-	if _, err := repository.applyIdentityMutations(context.Background(), "`ogame_users`", "`ogame_queue`", 42, mutation, current); err == nil || !strings.Contains(err.Error(), "name query failed") {
+	if _, err := repository.applyIdentityMutations(context.Background(), "`ogame_users`", "`ogame_queue`", 42, mutation, current, false); err == nil || !strings.Contains(err.Error(), "name query failed") {
 		t.Fatalf("expected name query error, got %v", err)
 	}
 
@@ -692,7 +734,7 @@ func TestOptionsRepositoryIdentityMutationErrors(t *testing.T) {
 		{rows: fakeRowsFromValues([]any{0})},
 		{err: errors.New("cooldown query failed")},
 	}}, "ogame_", nil)
-	if _, err := repository.applyIdentityMutations(context.Background(), "`ogame_users`", "`ogame_queue`", 42, mutation, current); err == nil || !strings.Contains(err.Error(), "cooldown query failed") {
+	if _, err := repository.applyIdentityMutations(context.Background(), "`ogame_users`", "`ogame_queue`", 42, mutation, current, false); err == nil || !strings.Contains(err.Error(), "cooldown query failed") {
 		t.Fatalf("expected cooldown query error, got %v", err)
 	}
 
@@ -701,7 +743,7 @@ func TestOptionsRepositoryIdentityMutationErrors(t *testing.T) {
 		{rows: fakeRowsFromValues([]any{0})},
 	}}, execErr: errors.New("name update failed")}
 	repository = NewOptionsRepositoryWithRunner(runner, runner, "ogame_", nil)
-	if _, err := repository.applyIdentityMutations(context.Background(), "`ogame_users`", "`ogame_queue`", 42, mutation, current); err == nil || !strings.Contains(err.Error(), "name update failed") {
+	if _, err := repository.applyIdentityMutations(context.Background(), "`ogame_users`", "`ogame_queue`", 42, mutation, current, false); err == nil || !strings.Contains(err.Error(), "name update failed") {
 		t.Fatalf("expected name update error, got %v", err)
 	}
 
@@ -797,7 +839,7 @@ func TestOptionsRepositoryCredentialMutationErrorBranches(t *testing.T) {
 	repository := NewOptionsRepositoryWithRunnerAndSecret(runner, runner, "ogame_", "secret", func() time.Time { return now })
 	_, err := repository.applyCredentialMutations(context.Background(), "`ogame_users`", "`ogame_queue`", 42, domaingame.OptionsMutation{
 		OldPassword: "oldpass123", NewPassword: "newpass123", NewPasswordRepeat: "newpass123",
-	}, current)
+	}, current, false)
 	if err == nil || !strings.Contains(err.Error(), "password update failed") {
 		t.Fatalf("expected password update error, got %v", err)
 	}
@@ -805,7 +847,7 @@ func TestOptionsRepositoryCredentialMutationErrorBranches(t *testing.T) {
 	repository = NewOptionsRepositoryWithRunnerAndSecret(&fakeOptionsRunner{fakeQueryer: fakeQueryer{results: []fakeQueryResult{{rows: fakeRowsFromValues([]any{1})}}}}, runner, "ogame_", "secret", func() time.Time { return now })
 	issue, err := repository.applyCredentialMutations(context.Background(), "`ogame_users`", "`ogame_queue`", 42, domaingame.OptionsMutation{
 		OldPassword: "oldpass123", Email: "new@example.test",
-	}, current)
+	}, current, false)
 	if err != nil || issue == nil || issue.Code != domaingame.OptionsIssueEmailUsed {
 		t.Fatalf("expected duplicate email issue, issue=%+v err=%v", issue, err)
 	}
@@ -817,7 +859,7 @@ func TestOptionsRepositoryCredentialMutationErrorBranches(t *testing.T) {
 	repository = NewOptionsRepositoryWithRunnerAndSecret(runner, runner, "ogame_", "secret", func() time.Time { return now })
 	_, err = repository.applyCredentialMutations(context.Background(), "`ogame_users`", "`ogame_queue`", 42, domaingame.OptionsMutation{
 		OldPassword: "oldpass123", Email: "new@example.test",
-	}, current)
+	}, current, false)
 	if err == nil || !strings.Contains(err.Error(), "email update failed") {
 		t.Fatalf("expected email update error, got %v", err)
 	}
@@ -829,7 +871,7 @@ func TestOptionsRepositoryCredentialMutationErrorBranches(t *testing.T) {
 	repository = NewOptionsRepositoryWithRunnerAndSecret(runner, runner, "ogame_", "secret", func() time.Time { return now })
 	_, err = repository.applyCredentialMutations(context.Background(), "`ogame_users`", "`ogame_queue`", 42, domaingame.OptionsMutation{
 		OldPassword: "oldpass123", Email: "new@example.test",
-	}, current)
+	}, current, false)
 	if err == nil || !strings.Contains(err.Error(), "queue delete failed") {
 		t.Fatalf("expected queue delete error, got %v", err)
 	}

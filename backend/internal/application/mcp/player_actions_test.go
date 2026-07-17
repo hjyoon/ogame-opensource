@@ -198,6 +198,28 @@ func TestPlayerActionToolsAreListedByUserScopes(t *testing.T) {
 	}
 }
 
+func TestSensitivePlayerActionSchemasDoNotAcceptCurrentPasswords(t *testing.T) {
+	_, _, service := playerActionsFixture()
+	result, err := service.ListTools(context.Background(), domainmcp.ListToolsCommand{AccessToken: "player"})
+	if err != nil {
+		t.Fatalf("ListTools returned error: %v", err)
+	}
+	for _, tool := range result.Tools {
+		if tool.Name != "mutate_planet" && tool.Name != "update_account_options" {
+			continue
+		}
+		properties, ok := tool.InputSchema["properties"].(map[string]any)
+		if !ok {
+			t.Fatalf("%s properties have type %T", tool.Name, tool.InputSchema["properties"])
+		}
+		for _, field := range []string{"password", "oldPassword"} {
+			if _, exists := properties[field]; exists {
+				t.Fatalf("%s must not accept current-password field %q", tool.Name, field)
+			}
+		}
+	}
+}
+
 func TestPlayerActionDryRunAndConfirmedExecution(t *testing.T) {
 	repository, _, service := playerActionsFixture()
 	tests := []struct {
@@ -275,17 +297,17 @@ func TestPlayerActionDryRunAndConfirmedExecution(t *testing.T) {
 func TestPlayerActionAdditionalBranches(t *testing.T) {
 	repository, mailer, service := playerActionsFixture()
 
-	deleteArgs := map[string]any{"planetId": 11, "targetPlanetId": 12, "action": "delete", "password": "secret"}
+	deleteArgs := map[string]any{"planetId": 11, "targetPlanetId": 12, "action": "delete"}
 	preview := actionResult(t, actionCall(t, service, "mutate_planet", deleteArgs), "planetMutation")
 	actionCall(t, service, "mutate_planet", confirmedArguments(deleteArgs, preview.Confirmation))
-	if repository.deleteQuery.DeleteID != 12 || repository.deleteQuery.Password != "secret" {
+	if repository.deleteQuery.DeleteID != 12 || !repository.deleteQuery.SkipPasswordVerification || repository.deleteQuery.Password != "" {
 		t.Fatalf("unexpected delete query: %+v", repository.deleteQuery)
 	}
 
 	for _, args := range []map[string]any{
 		{"action": "rename", "name": "NewName"},
-		{"action": "password", "oldPassword": "old", "newPassword": "password1", "newPasswordRepeat": "password1"},
-		{"action": "email", "oldPassword": "old", "email": "new@example.test"},
+		{"action": "password", "newPassword": "password1", "newPasswordRepeat": "password1"},
+		{"action": "email", "email": "new@example.test"},
 		{"action": "vacation", "enabled": true},
 		{"action": "deletion", "enabled": true},
 		{"action": "resend_activation"},
@@ -296,12 +318,20 @@ func TestPlayerActionAdditionalBranches(t *testing.T) {
 		}
 	}
 
+	passwordArgs := map[string]any{"action": "password", "newPassword": "password1", "newPasswordRepeat": "password1"}
+	preview = actionResult(t, actionCall(t, service, "update_account_options", passwordArgs), "accountOptionsMutation")
+	actionCall(t, service, "update_account_options", confirmedArguments(passwordArgs, preview.Confirmation))
+	if !repository.optionsQuery.SkipPasswordVerification || repository.optionsQuery.Mutation.OldPassword != "" ||
+		repository.optionsQuery.Mutation.NewPassword != "password1" {
+		t.Fatalf("unexpected passwordless password mutation: %+v", repository.optionsQuery)
+	}
+
 	repository.options.OutboundMail = &domaingame.OptionsChangeMail{Recipient: "new@example.test"}
-	emailArgs := map[string]any{"action": "email", "oldPassword": "old", "email": "new@example.test"}
+	emailArgs := map[string]any{"action": "email", "email": "new@example.test"}
 	preview = actionResult(t, actionCall(t, service, "update_account_options", emailArgs), "accountOptionsMutation")
 	actionCall(t, service, "update_account_options", confirmedArguments(emailArgs, preview.Confirmation))
-	if mailer.mail.Recipient != "new@example.test" {
-		t.Fatalf("outbound options mail was not sent: %+v", mailer.mail)
+	if mailer.mail.Recipient != "new@example.test" || !repository.optionsQuery.SkipPasswordVerification || repository.optionsQuery.Mutation.OldPassword != "" {
+		t.Fatalf("unexpected passwordless email mutation: query=%+v mail=%+v", repository.optionsQuery, mailer.mail)
 	}
 
 	recycle := map[string]any{"action": "recycle", "targetGalaxy": 1, "targetSystem": 2, "targetPosition": 3, "targetType": 2, "amount": 1}
@@ -356,7 +386,7 @@ func TestPlayerActionRepositoryFailuresAreReturned(t *testing.T) {
 		{"mutate_building", "buildingMutation", "building", map[string]any{"action": "add", "techId": 1}},
 		{"start_research", "researchMutation", "research", map[string]any{"techId": 106}},
 		{"mutate_planet", "planetMutation", "rename", map[string]any{"planetId": 11, "action": "rename", "name": "Renamed"}},
-		{"mutate_planet", "planetMutation", "delete", map[string]any{"planetId": 11, "action": "delete", "password": "secret"}},
+		{"mutate_planet", "planetMutation", "delete", map[string]any{"planetId": 11, "action": "delete"}},
 		{"mutate_fleet_template", "fleetTemplateMutation", "template", map[string]any{"action": "save", "name": "Raid", "ships": map[string]any{"202": 1}}},
 		{"mutate_commander_queue", "commanderQueueMutation", "empire", map[string]any{"targetPlanetId": 11, "action": "add", "techId": 1}},
 		{"launch_interplanetary_missiles", "missileLaunch", "missile", map[string]any{"targetPlanetId": 12, "amount": 1}},
@@ -440,10 +470,10 @@ func TestPlayerActionValidation(t *testing.T) {
 		{"start_research", map[string]any{"techId": "bad"}},
 		{"start_research", map[string]any{"techId": 1, "planetId": "bad"}},
 		{"mutate_planet", map[string]any{"planetId": 0, "action": "rename", "name": "x"}},
-		{"mutate_planet", map[string]any{"planetId": 1, "action": "delete"}},
 		{"mutate_planet", map[string]any{"planetId": 1, "action": "invalid"}},
 		{"mutate_planet", map[string]any{"planetId": 1, "action": "rename", "name": ""}},
-		{"mutate_planet", map[string]any{"planetId": 1, "targetPlanetId": "bad", "action": "delete", "password": "x"}},
+		{"mutate_planet", map[string]any{"planetId": 1, "targetPlanetId": "bad", "action": "delete"}},
+		{"mutate_planet", map[string]any{"planetId": 1, "action": "delete", "password": "must-not-be-sent"}},
 		{"mutate_fleet_template", map[string]any{"action": "save", "name": "x"}},
 		{"mutate_fleet_template", map[string]any{"action": "delete", "templateId": 0}},
 		{"mutate_fleet_template", map[string]any{"action": "invalid"}},
@@ -479,8 +509,9 @@ func TestPlayerActionValidation(t *testing.T) {
 		{"mutate_alliance", map[string]any{"action": "save_ranks", "rankRights": []any{map[string]any{"id": 1, "rights": "bad"}}}},
 		{"update_account_options", map[string]any{"action": "vacation"}},
 		{"update_account_options", map[string]any{"action": "deletion"}},
-		{"update_account_options", map[string]any{"action": "password", "oldPassword": "", "newPassword": "x", "newPasswordRepeat": "x"}},
-		{"update_account_options", map[string]any{"action": "email", "oldPassword": "", "email": "x@example.test"}},
+		{"update_account_options", map[string]any{"action": "password", "newPassword": "", "newPasswordRepeat": "x"}},
+		{"update_account_options", map[string]any{"action": "email", "email": ""}},
+		{"update_account_options", map[string]any{"action": "email", "email": "x@example.test", "oldPassword": "must-not-be-sent"}},
 		{"update_account_options", map[string]any{"action": "settings", "useSkin": "bad"}},
 		{"update_account_options", map[string]any{"action": "invalid"}},
 		{"redeem_coupon", map[string]any{"couponCode": ""}},

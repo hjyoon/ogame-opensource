@@ -58,6 +58,7 @@ func TestOptionsServiceUpdatesOptionsForAuthenticatedSession(t *testing.T) {
 	}
 	if !result.Authenticated || result.ActionIssue.Code != domaingame.OptionsIssueSaved ||
 		repository.updateQuery.PlayerID != 42 || repository.updateQuery.Mutation.MaxSpy != 7 ||
+		repository.updateQuery.SkipPasswordVerification ||
 		mailer.change.Character != "Legor" || mailer.change.PublicBaseURL != "https://request.example" || result.Options.OutboundMail != nil {
 		t.Fatalf("unexpected update result/query: result=%+v query=%+v", result, repository.updateQuery)
 	}

@@ -368,10 +368,12 @@ func (r OverviewRepository) DeletePlanet(ctx context.Context, query appgame.Over
 	if err != nil {
 		return domaingame.Overview{}, nil, err
 	}
-	if ok, err := r.passwordMatches(ctx, usersTable, query.PlayerID, query.Password); err != nil {
-		return domaingame.Overview{}, nil, err
-	} else if !ok {
-		return overview, overviewIssue(domaingame.OverviewIssuePasswordInvalid, "The password is wrong."), nil
+	if !query.SkipPasswordVerification {
+		if ok, err := r.passwordMatches(ctx, usersTable, query.PlayerID, query.Password); err != nil {
+			return domaingame.Overview{}, nil, err
+		} else if !ok {
+			return overview, overviewIssue(domaingame.OverviewIssuePasswordInvalid, "The password is wrong."), nil
+		}
 	}
 
 	user, err := r.loadUser(ctx, usersTable, query.PlayerID)

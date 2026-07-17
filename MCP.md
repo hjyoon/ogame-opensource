@@ -1,6 +1,6 @@
 # MCP Server
 
-Updated: 2026-07-16. Keep this file under 4KB.
+Updated: 2026-07-18. Keep this file under 4KB.
 
 The Go backend exposes MCP to authenticated Players, Operators, and Admins. MCP follows the same Clean Architecture boundaries and reuses game/Admin permission rules.
 
@@ -48,7 +48,7 @@ Mutation tools also cover building construction/demolition, research start, plan
 
 Staff tools are `get_admin_access`, `get_admin_panel`, and `mutate_admin_panel`. They cover the legacy Admin mode inventory, including dedicated Bot strategy editing. Operator mode/action limits reuse `AdminModeRequiresAdmin` and `AdminMutationRequiresAdmin`; Admin-only data and actions return `Forbidden` to Operator tokens.
 
-Mutations default to dry-run and require the returned confirmation token. Commander-only actions report `commander_required`; account results exclude password hashes and validation secrets. `mcp:write` remains reserved.
+Mutations use scoped bearer authorization instead of current account passwords, default to dry-run, and require the returned confirmation token. New passwords remain write values. Account results exclude password hashes and validation secrets. `mcp:write` remains reserved.
 
 ## Verification
 

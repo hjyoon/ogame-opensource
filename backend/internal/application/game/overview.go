@@ -36,6 +36,8 @@ type OverviewDeleteQuery struct {
 	PlanetID int
 	DeleteID int
 	Password string
+	// SkipPasswordVerification is reserved for an upstream scoped authorization.
+	SkipPasswordVerification bool
 }
 
 type OverviewCommand struct {

@@ -365,6 +365,8 @@ try {
   const tokenRowAfterCreate = (tokenListAfterCreateBody.tokens ?? []).find((token) => Number(token.id ?? 0) === tokenID);
   const authedTools = await mcpJSONRPC("tools/list", {}, { id: 20, headers: authHeaders });
   const authedToolsBody = parseJSON(authedTools);
+  const mutatePlanetProperties = (authedToolsBody.result?.tools ?? []).find((tool) => tool.name === "mutate_planet")?.inputSchema?.properties ?? {};
+  const accountOptionsProperties = (authedToolsBody.result?.tools ?? []).find((tool) => tool.name === "update_account_options")?.inputSchema?.properties ?? {};
   const accessTool = await mcpJSONRPC("tools/call", { name: "get_mcp_access", arguments: {} }, { id: 21, headers: authHeaders });
   const accessToolBody = parseJSON(accessTool);
   const planetsTool = await mcpJSONRPC("tools/call", { name: "list_planets", arguments: {} }, { id: 22, headers: authHeaders });
@@ -630,6 +632,7 @@ try {
       check(authedTools.status === 200 && authedToolNames.length === expectedTools.length && expectedTools.every((name) => authedToolNames.includes(name)), "bearer token exposes exactly the documented player MCP tools", {
         authedToolNames
       }),
+      check(!Object.hasOwn(mutatePlanetProperties, "password") && !Object.hasOwn(accountOptionsProperties, "oldPassword") && Object.hasOwn(accountOptionsProperties, "newPassword"), "sensitive MCP mutations use bearer authorization without current-password inputs", { mutatePlanetProperties, accountOptionsProperties }),
       check(accessTool.status === 200 && Number(accessToolBody.result?.structuredContent?.playerId ?? 0) === login.playerID, "get_mcp_access returns bearer player id", accessToolBody.result ?? {}),
       check((accessToolBody.result?.structuredContent?.scopes ?? []).includes("mcp:read"), "get_mcp_access returns bearer scopes", accessToolBody.result?.structuredContent ?? {}),
       check(planetsTool.status === 200 && (planetsToolBody.result?.structuredContent?.planets ?? []).length > 0, "list_planets returns at least one planet", planetsToolBody.result ?? {}),

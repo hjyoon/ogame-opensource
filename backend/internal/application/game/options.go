@@ -34,6 +34,8 @@ type OptionsUpdateQuery struct {
 	PlayerID int
 	PlanetID int
 	Mutation domaingame.OptionsMutation
+	// SkipPasswordVerification is reserved for an upstream scoped authorization.
+	SkipPasswordVerification bool
 }
 
 type OptionsUpdateCommand struct {

@@ -192,7 +192,8 @@ func TestOverviewServiceDeletesPlanetForAuthenticatedSession(t *testing.T) {
 		t.Fatalf("expected delete overview result, got %+v", result)
 	}
 	if repository.deleteQuery.PlayerID != 42 || repository.deleteQuery.PlanetID != 99 ||
-		repository.deleteQuery.DeleteID != 99 || repository.deleteQuery.Password != "admin" {
+		repository.deleteQuery.DeleteID != 99 || repository.deleteQuery.Password != "admin" ||
+		repository.deleteQuery.SkipPasswordVerification {
 		t.Fatalf("unexpected delete query: %+v", repository.deleteQuery)
 	}
 	if sessions.command.RemoteAddr != "203.0.113.10" {
