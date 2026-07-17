@@ -103,14 +103,25 @@ login_go() {
 capture_state() {
   event="$1"; score_before=100000000
   raw="$(db_query "SELECT JSON_OBJECT('visit',(SELECT \`700\` FROM uni1_planets WHERE name='E2E Exp Farspace' AND g=$target_g AND s=$target_s AND p=16 LIMIT 1),'fleetCount',(SELECT COUNT(*) FROM uni1_fleet WHERE owner_id=$player_id),'returnCount',(SELECT COUNT(*) FROM uni1_fleet WHERE owner_id=$player_id AND mission=115),'returnFlight',COALESCE((SELECT flight_time FROM uni1_fleet WHERE owner_id=$player_id AND mission=115 ORDER BY fleet_id DESC LIMIT 1),0),'returnFuel',COALESCE((SELECT fuel FROM uni1_fleet WHERE owner_id=$player_id AND mission=115 ORDER BY fleet_id DESC LIMIT 1),0),'returnShips',COALESCE((SELECT \`202\`+\`203\`+\`204\`+\`205\`+\`206\`+\`207\`+\`208\`+\`209\`+\`210\`+\`211\`+\`212\`+\`213\`+\`214\`+\`215\` FROM uni1_fleet WHERE owner_id=$player_id AND mission=115 ORDER BY fleet_id DESC LIMIT 1),0),'returnResources',COALESCE((SELECT \`700\`+\`701\`+\`702\` FROM uni1_fleet WHERE owner_id=$player_id AND mission=115 ORDER BY fleet_id DESC LIMIT 1),0),'dmfree',(SELECT dmfree FROM uni1_users WHERE player_id=$player_id),'trader',(SELECT trader FROM uni1_users WHERE player_id=$player_id),'score1',(SELECT score1 FROM uni1_users WHERE player_id=$player_id),'expMessages',(SELECT COUNT(*) FROM uni1_messages WHERE owner_id=$player_id AND pm=3 AND subj LIKE 'Expedition result%'),'battleText',(SELECT COUNT(*) FROM uni1_messages WHERE owner_id=$player_id AND pm=6),'battleLink',(SELECT COUNT(*) FROM uni1_messages WHERE owner_id=$player_id AND pm=2),'battleData',(SELECT COUNT(*) FROM uni1_battledata WHERE battle_id>$battle_max),'logs',(SELECT COUNT(*) FROM uni1_fleetlogs WHERE owner_id=$player_id),'orbitLogs',(SELECT COUNT(*) FROM uni1_fleetlogs WHERE owner_id=$player_id AND mission=215),'returnLogs',(SELECT COUNT(*) FROM uni1_fleetlogs WHERE owner_id=$player_id AND mission=115))")"
+  report_bodies="$(db_query "SELECT JSON_OBJECT('battleTextBody',COALESCE((SELECT text FROM uni1_messages WHERE owner_id=$player_id AND pm=6 ORDER BY msg_id DESC LIMIT 1),''),'battleDataBody',COALESCE((SELECT report FROM uni1_battledata WHERE battle_id>$battle_max ORDER BY battle_id DESC LIMIT 1),''))")"
+  raw="$(jq -nc --argjson state "$raw" --argjson reports "$report_bodies" '$state + $reports')"
   sent=11
   case "$event" in resources|fleet) sent=21 ;; aliens|pirates) sent=21 ;; esac
   printf '%s' "$raw" | jq -cS --arg event "$event" --argjson sent "$sent" --argjson scoreBefore "$score_before" '
+    def complete_battle_report:
+      contains("Contact with the attacking fleet has been lost") or
+      (contains("</table><p> ") and test("The (attacker|defender) has won the battle!|The battle ended in a draw"));
+    def legacy_expedition_sections:
+      (contains("lost a total") or contains("space coordinates now float") or contains("He captured")) | not;
     . + {timing:(if .returnCount==0 then "none" elif .returnFlight>120 then "delayed" elif .returnFlight<120 then "accelerated" else "base" end)} |
     {processed:(.fleetCount==.returnCount),visit:(.visit==1),expeditionMessage:(.expMessages==1),returnPresent:(.returnCount==1),timing:.timing,returnFuel:.returnFuel,
      reward:(if $event=="dark_matter" then .dmfree>0 elif $event=="resources" then .returnResources>0 elif $event=="fleet" then .returnShips>$sent elif $event=="trader" then .trader>0 else true end),
      scoreContract:(if $event=="black_hole" then .score1<$scoreBefore elif ($event=="aliens" or $event=="pirates") then .score1<=$scoreBefore else true end),
      battleText:(.battleText==(if ($event=="aliens" or $event=="pirates") then 1 else 0 end)),battleLink:(.battleLink==(if ($event=="aliens" or $event=="pirates") then 1 else 0 end)),battleData:(.battleData==(if ($event=="aliens" or $event=="pirates") then 1 else 0 end)),
+     battleTextComplete:(if ($event=="aliens" or $event=="pirates") then (.battleTextBody|complete_battle_report) else true end),
+     battleDataComplete:(if ($event=="aliens" or $event=="pirates") then (.battleDataBody|complete_battle_report) else true end),
+     battleTextSections:(if ($event=="aliens" or $event=="pirates") then (.battleTextBody|legacy_expedition_sections) else true end),
+     battleDataSections:(if ($event=="aliens" or $event=="pirates") then (.battleDataBody|legacy_expedition_sections) else true end),
      orbitLog:(.orbitLogs==1),returnLog:(.returnLogs==(if $event=="black_hole" then 0 else 1 end)),logCount:(.logs==(if $event=="black_hole" then 1 else 2 end))}'
 }
 

@@ -35,6 +35,7 @@ const artifacts = [
   { name: "go/PHP accelerated fleet Recall differential", path: ".tmp/golang-fleet-speed-recall-differential.json" },
   { name: "go/PHP fleet-template differential", path: ".tmp/golang-fleet-template-differential.json" },
   { name: "go/PHP combat engine differential", path: ".tmp/golang-combat-engine-differential.json" },
+  { name: "go/PHP combat report differential", path: ".tmp/golang-combat-report-differential.json" },
   { name: "go/PHP expedition differential", path: ".tmp/golang-expedition-differential.json" },
   { name: "go/PHP colonization differential", path: ".tmp/golang-colonization-differential.json" },
   { name: "go/PHP missile differential", path: ".tmp/golang-missile-differential.json" },

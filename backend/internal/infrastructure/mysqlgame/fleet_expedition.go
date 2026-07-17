@@ -101,7 +101,7 @@ func (r FleetRepository) finishExpeditionBattle(ctx context.Context, uniTable st
 		return err
 	}
 	writeback := domaingame.BuildCombatWriteback(result, []map[int]int{{}}, 0, 0)
-	report := combatBattleReport(result, writeback, []map[int]int{{}}, domaingame.Resources{}, battleMoonCreation{}, task.End)
+	report := combatExpeditionBattleReport(result, task.End)
 	battleID, err := r.insertBattleData(ctx, battleTable, acsBattleSource(result, settings.RapidFire), task.End)
 	if err != nil {
 		return err
@@ -133,10 +133,7 @@ func (r FleetRepository) finishExpeditionBattle(ctx context.Context, uniTable st
 func (r FleetRepository) insertExpeditionBattleMessages(ctx context.Context, messagesTable string, battleID int64, value fleetMessageContext, target expeditionTargetState, report string, result domaingame.CombatResult, writeback domaingame.CombatWriteback, at int64) error {
 	attackerLoss, defenderLoss := combatLossTotals(writeback)
 	style, _ := guardedBattleStyles(result.Outcome)
-	message := report
-	if result.Outcome == domaingame.CombatDefenderWon && len(result.Rounds) <= 2 {
-		message = fmt.Sprintf("%s <!--A:%d,W:%d-->", expeditionLocaleValue(target.Language, "BATTLE_LOST"), attackerLoss, defenderLoss)
-	}
+	message := expeditionAttackerBattleReport(target.Language, report, result, attackerLoss, defenderLoss)
 	from := expeditionLocaleValue(target.Language, "FLEET_MESSAGE_FROM")
 	subject := expeditionLocaleValue(target.Language, "FLEET_MESSAGE_BATTLE")
 	inserted, err := r.execer.ExecContext(ctx, fmt.Sprintf("INSERT INTO %s (owner_id, pm, msgfrom, subj, text, shown, date, planet_id) VALUES (?, ?, ?, ?, ?, 1, ?, 0)", messagesTable), value.OriginOwnerID, domaingame.MessageTypeBattleReportText, from, subject, message, at)
@@ -159,8 +156,16 @@ func (r FleetRepository) updateExpeditionBattleData(ctx context.Context, battleT
 	attackerLoss, defenderLoss := combatLossTotals(writeback)
 	style, _ := guardedBattleStyles(result.Outcome)
 	title := localizedBattleReportLink(battleID, value, style, true, defenderLoss, attackerLoss, expeditionLocaleValue(language, "FLEET_MESSAGE_BATTLE"))
+	report = expeditionAttackerBattleReport(language, report, result, attackerLoss, defenderLoss)
 	_, err := r.execer.ExecContext(ctx, fmt.Sprintf("UPDATE %s SET title = ?, report = ? WHERE battle_id = ? LIMIT 1", battleTable), title, report, battleID)
 	return err
+}
+
+func expeditionAttackerBattleReport(language string, report string, result domaingame.CombatResult, attackerLoss int64, defenderLoss int64) string {
+	if result.Outcome == domaingame.CombatDefenderWon && len(result.Rounds) <= 2 {
+		return fmt.Sprintf("%s <!--A:%d,W:%d-->", expeditionLocaleValue(language, "BATTLE_LOST"), attackerLoss, defenderLoss)
+	}
+	return report
 }
 
 func localizedBattleReportLink(reportID int64, value fleetMessageContext, style string, admin bool, defenderLoss int64, attackerLoss int64, subject string) string {
@@ -273,7 +278,7 @@ func loadExpeditionLocale(language string) map[string]string {
 		if _, err := os.Stat(locaDir); err != nil {
 			continue
 		}
-		for _, name := range []string{"expedition.php", "espionage.php", "fleetmsg.php", "technames.php"} {
+		for _, name := range []string{"expedition.php", "espionage.php", "fleetmsg.php", "battlereport.php", "technames.php"} {
 			fileValues, err := readAdminLocalizationFile(filepath.Join(locaDir, name), language)
 			if err != nil {
 				continue

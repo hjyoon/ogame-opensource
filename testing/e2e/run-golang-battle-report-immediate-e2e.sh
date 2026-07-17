@@ -9,6 +9,7 @@ QUEUE_DURATION="${OGAME_BATTLE_REPORT_QUEUE_DURATION:-8}"
 FIXTURE_FILE="$ROOT_DIR/.tmp/battle-report-immediate-fixture.json"
 FIRST_FILE="$ROOT_DIR/.tmp/battle-report-immediate-first.json"
 RELOAD_FILE="$ROOT_DIR/.tmp/battle-report-immediate-reload.json"
+REPORT_FILE="$ROOT_DIR/.tmp/battle-report-immediate-report.json"
 
 wait_for_url() {
   url="$1"
@@ -63,6 +64,13 @@ jq -e --argjson prepared "$PREPARED_AT" '
 ' "$FIRST_FILE" >/dev/null
 
 REPORT_ID="$(jq -er --argjson prepared "$PREPARED_AT" '.messages.rows[] | select(.type == 2 and .date >= $prepared and (.subject | contains("combatreport_"))) | .id' "$FIRST_FILE")"
+TEXT_REPORT_ID="$(jq -er --argjson prepared "$PREPARED_AT" '
+  .messages.rows[]
+  | select(.type == 2 and .date >= $prepared and (.subject | contains("combatreport_")))
+  | .subject
+  | capture("bericht=(?<id>[0-9]+)")
+  | .id
+' "$FIRST_FILE")"
 fetch_messages "$RELOAD_FILE"
 jq -e --argjson report "$REPORT_ID" --argjson prepared "$PREPARED_AT" '
   .authenticated == true and
@@ -70,4 +78,31 @@ jq -e --argjson report "$REPORT_ID" --argjson prepared "$PREPARED_AT" '
   ([.messages.rows[] | select(.type == 2 and .date >= $prepared and (.subject | contains("combatreport_")))] | length) == 1
 ' "$RELOAD_FILE" >/dev/null
 
-printf 'Immediate battle report E2E passed: report=%s\n' "$REPORT_ID"
+curl --fail --silent --show-error \
+  -H "Cookie: $COOKIE_NAME=$COOKIE_VALUE" \
+  "$GO_BASE_URL/api/game/report?session=$SESSION&bericht=$TEXT_REPORT_ID" \
+  -o "$REPORT_FILE"
+jq -e '
+  .authenticated == true and
+  .report.allowed == true and
+  (.report.text | test("The (attacker|defender) has won the battle!|The battle ended in a draw")) and
+  (.report.text | contains("The attacker lost a total")) and
+  (.report.text | contains("The defender lost a total")) and
+  (.report.text | contains("At these space coordinates now float")) and
+  (.report.text | contains("</table>"))
+' "$REPORT_FILE" >/dev/null
+
+for browser in ${OGAME_BATTLE_REPORT_BROWSERS:-chromium firefox}; do
+  (
+    cd "$ROOT_DIR/frontend"
+    OGAME_PLAYWRIGHT_BROWSER="$browser" \
+    OGAME_GO_BASE_URL="$GO_BASE_URL" \
+    OGAME_BATTLE_REPORT_SESSION="$SESSION" \
+    OGAME_BATTLE_REPORT_ID="$TEXT_REPORT_ID" \
+    OGAME_BATTLE_REPORT_COOKIE_NAME="$COOKIE_NAME" \
+    OGAME_BATTLE_REPORT_COOKIE_VALUE="$COOKIE_VALUE" \
+      bun run e2e:battle-report-completeness
+  )
+done
+
+printf 'Immediate battle report E2E passed: link=%s report=%s\n' "$REPORT_ID" "$TEXT_REPORT_ID"

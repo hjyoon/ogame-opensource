@@ -86,8 +86,40 @@ func TestExpeditionBattleMessagePersistenceErrors(t *testing.T) {
 	if err := repository.updateExpeditionBattleData(context.Background(), "`ogame_battledata`", 7, value, "en", "report", result, writeback); err != nil {
 		t.Fatal(err)
 	}
+	if len(runner.execCalls) != 3 ||
+		!strings.Contains(stringArg(runner.execCalls[2].args, 1), "Contact with the attacking fleet has been lost") ||
+		!strings.Contains(stringArg(runner.execCalls[2].args, 1), "<!--A:10,W:20-->") {
+		t.Fatalf("expedition battledata must retain the legacy short loss report: %+v", runner.execCalls)
+	}
 	if got := localizedBattleReportLink(7, value, "style", false, 20, 10, "Localized"); !strings.Contains(got, "Localized") {
 		t.Fatalf("localized link=%q", got)
+	}
+}
+
+func TestExpeditionBattleReportMatchesLegacySectionsAndTail(t *testing.T) {
+	result := pirateCombatReportResult(2, domaingame.CombatDefenderWon)
+	result.Rounds[1].Attackers[0].Units = map[int]int{}
+	report := combatExpeditionBattleReport(result, 1_700_000_000)
+
+	if strings.Count(report, "The attacking fleet fires") != 2 ||
+		!strings.Contains(report, "Attacker ghost") ||
+		!strings.Contains(report, "<br>destroyed") ||
+		!strings.HasSuffix(report, "<p> The defender has won the battle!") {
+		t.Fatalf("incomplete two-round expedition report: %s", report)
+	}
+	for _, forbidden := range []string{"He captured", "lost a total", "space coordinates now float"} {
+		if strings.Contains(report, forbidden) {
+			t.Fatalf("legacy expedition report must omit %q: %s", forbidden, report)
+		}
+	}
+
+	short := expeditionAttackerBattleReport("en", report, result, 12_000, 0)
+	if short != "Contact with the attacking fleet has been lost. <br> (That means it was destroyed during the first round.) <!--A:12000,W:0-->" {
+		t.Fatalf("unexpected short expedition loss report: %s", short)
+	}
+	result.Rounds = append(result.Rounds, result.Rounds[1])
+	if got := expeditionAttackerBattleReport("en", report, result, 12_000, 0); got != report {
+		t.Fatalf("three-round losses must retain the detailed report: %s", got)
 	}
 }
 

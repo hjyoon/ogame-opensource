@@ -257,6 +257,26 @@ func battleReportLinkSubjectWithLosses(reportID int64, value fleetMessageContext
 }
 
 func combatBattleReport(result domaingame.CombatResult, writeback domaingame.CombatWriteback, repaired []map[int]int, captured domaingame.Resources, moon battleMoonCreation, at int64) string {
+	return renderCombatBattleReport(result, &combatBattleReportDetails{
+		writeback: &writeback,
+		repaired:  repaired,
+		captured:  &captured,
+		moon:      &moon,
+	}, at)
+}
+
+type combatBattleReportDetails struct {
+	writeback *domaingame.CombatWriteback
+	repaired  []map[int]int
+	captured  *domaingame.Resources
+	moon      *battleMoonCreation
+}
+
+func combatExpeditionBattleReport(result domaingame.CombatResult, at int64) string {
+	return renderCombatBattleReport(result, nil, at)
+}
+
+func renderCombatBattleReport(result domaingame.CombatResult, details *combatBattleReportDetails, at int64) string {
 	var report strings.Builder
 	fmt.Fprintf(&report, "At %s the following fleets met in battle::<br>", time.Unix(at, 0).Format("01-02 15:04:05"))
 	report.WriteString("<table border=1 width=100%><tr>")
@@ -286,23 +306,31 @@ func combatBattleReport(result domaingame.CombatResult, writeback domaingame.Com
 	switch result.Outcome {
 	case domaingame.CombatAttackerWon:
 		report.WriteString("<p> The attacker has won the battle!")
-		fmt.Fprintf(&report, "<br>He captured<br>%s metal %s crystal, and %s deuterium", combatLegacyNumber(captured.Metal), combatLegacyNumber(captured.Crystal), combatLegacyNumber(captured.Deuterium))
+		if details != nil && details.captured != nil {
+			fmt.Fprintf(&report, "<br>He captured<br>%s metal %s crystal, and %s deuterium", combatLegacyNumber(details.captured.Metal), combatLegacyNumber(details.captured.Crystal), combatLegacyNumber(details.captured.Deuterium))
+		}
 	case domaingame.CombatDefenderWon:
 		report.WriteString("<p> The defender has won the battle!")
 	default:
 		report.WriteString("<p> The battle ended in a draw, both fleets withdraw to their home planets.")
 	}
-	attackerLoss, defenderLoss := int64(0), int64(0)
-	for _, loss := range writeback.AttackerLosses {
-		attackerLoss += loss.Points
+	if details != nil && details.writeback != nil {
+		attackerLoss, defenderLoss := int64(0), int64(0)
+		for _, loss := range details.writeback.AttackerLosses {
+			attackerLoss += loss.Points
+		}
+		for _, loss := range details.writeback.DefenderLosses {
+			defenderLoss += loss.Points
+		}
+		fmt.Fprintf(&report, "<br><p><br>The attacker lost a total of %s units.<br>The defender lost a total of %s units.", combatLegacyNumber(float64(attackerLoss)), combatLegacyNumber(float64(defenderLoss)))
+		fmt.Fprintf(&report, "<br>At these space coordinates now float %s metal and %s crystal.", combatLegacyNumber(details.writeback.Debris.Metal), combatLegacyNumber(details.writeback.Debris.Crystal))
 	}
-	for _, loss := range writeback.DefenderLosses {
-		defenderLoss += loss.Points
+	if details != nil && details.moon != nil {
+		appendBattleMoonReport(&report, *details.moon)
 	}
-	fmt.Fprintf(&report, "<br><p><br>The attacker lost a total of %s units.<br>The defender lost a total of %s units.", combatLegacyNumber(float64(attackerLoss)), combatLegacyNumber(float64(defenderLoss)))
-	fmt.Fprintf(&report, "<br>At these space coordinates now float %s metal and %s crystal.", combatLegacyNumber(writeback.Debris.Metal), combatLegacyNumber(writeback.Debris.Crystal))
-	appendBattleMoonReport(&report, moon)
-	appendCombatRepairReport(&report, repaired)
+	if details != nil && details.repaired != nil {
+		appendCombatRepairReport(&report, details.repaired)
+	}
 	return report.String()
 }
 

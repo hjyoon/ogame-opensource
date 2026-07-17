@@ -232,6 +232,9 @@ if [ "${OGAME_RUN_GO_DOCKER:-1}" = "1" ]; then
     if [ "${OGAME_RUN_COMBAT_ENGINE_DIFFERENTIAL:-1}" = "1" ]; then
       "$SCRIPT_DIR/run-golang-combat-engine-differential-e2e.sh"
     fi
+    if [ "${OGAME_RUN_COMBAT_REPORT_DIFFERENTIAL:-1}" = "1" ]; then
+      "$SCRIPT_DIR/run-golang-combat-report-differential-e2e.sh"
+    fi
     docker compose exec -T server php "$LEGACY_E2E_CONTAINER_DIR/cleanup-golang-migration-fixtures.php" >/dev/null
     docker compose cp "$SCRIPT_DIR/prepare-golang-user-type-fixture.php" "server:$LEGACY_E2E_CONTAINER_DIR/prepare-golang-user-type-fixture.php" >/dev/null
     docker compose exec -T server php "$LEGACY_E2E_CONTAINER_DIR/prepare-golang-user-type-fixture.php" > "$ROOT_DIR/.tmp/golang-user-type-fixture.json"

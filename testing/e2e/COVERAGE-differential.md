@@ -17,8 +17,8 @@ compare normalized HTTP/DB effects, then restore.
 | Alliance | 27 | create/apply/review, ranks, text/settings, rename, leave/kick/dismiss/transfer | PASS |
 | Account options | 36 | settings, identity/mail, activation, vacation/deletion, Commander/feed/operator flags | PASS |
 | Admin/runtime | 180 | [Admin 173](COVERAGE-admin-differential.md) plus runtime queue 7 | PASS |
-| Combat engine | 4 | outcome, shots/power, absorption, survivors | PASS |
-| **Total** | **434** | **48 differential result groups** | **PASS** |
+| Combat engine/report | 6 | outcome, shots/power, survivors, full 2/6-round HTML | PASS |
+| **Total** | **436** | **49 differential result groups** | **PASS** |
 
 Resource cases cover partial production and 0/100 boundaries. Each side logs in
 before its action because login rotates the private cookie.
@@ -34,7 +34,9 @@ Reports use `.tmp/golang-*-differential.json`. Queue cases normalize generated
 IDs/timestamps but preserve duration. Fixtures come from
 `prepare-golang-smoke-fixture.php`; every script restores changed state.
 The combat engine oracle exact-compares four deterministic round outcomes, shot
-totals, absorbed power, and survivors. Guarded DB cases also compare repair,
+totals, absorbed power, and survivors. The report oracle exact-compares complete
+two- and six-round pirate HTML, including the final fleet table and outcome.
+Guarded DB cases also compare repair,
 losses, debris, report HTML/link messages, planet units, scores, and cleanup.
 Moon creation retries a deterministic 20% opportunity to success on each runtime;
 only generated diameter/temperature are range-checked instead of exact-compared.
