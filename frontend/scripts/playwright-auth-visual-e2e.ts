@@ -567,6 +567,14 @@ const pageSpecs: AuthPageSpec[] = [
     expectedTexts: ["To the wise lord", "Dark Matter", "Officers", "Commander", "Admiral", "1 week for"]
   },
   {
+    name: "game-payment",
+    legacyPage: "payment",
+    migratedPath: "/game/payment",
+    legacyReady: "#content input[name='couponcode']",
+    migratedReady: ".legacy-payment-table input[name='couponcode']",
+    expectedTexts: ["Use coupon.", "Enter your coupon code here.", "Coupon Code:", "Check coupon"]
+  },
+  {
     name: "game-research",
     legacyPage: "buildings",
     legacyQuery: { mode: "Forschung" },

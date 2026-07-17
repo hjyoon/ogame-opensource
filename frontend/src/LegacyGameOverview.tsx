@@ -69,6 +69,20 @@ export type GameOfficerRecruitment = {
   days: number;
 };
 
+export type GamePaymentStatus = {
+  authenticated: boolean;
+  issues: { code: string; message: string }[];
+  actionIssue?: { code: string; message: string };
+  payment?: {
+    coupon?: GamePaymentCoupon;
+  };
+};
+
+export type GamePaymentAction = {
+  action: "check" | "activate";
+  couponCode: string;
+};
+
 export type GameAllianceStatus = {
   authenticated: boolean;
   issues: { code: string; message: string }[];
@@ -1374,6 +1388,16 @@ type GameOfficerRow = {
   threeMonthCost: number;
 };
 
+type GamePaymentCoupon = {
+  id: number;
+  code: string;
+  amount: number;
+  used: boolean;
+  userUniverse: number;
+  userId: number;
+  userName: string;
+};
+
 type GameAlliance = {
   commander: string;
   currentPlanet: GamePlanetOverview;
@@ -1880,6 +1904,10 @@ type LegacyGameOverviewProps = {
   officersError: string | null;
   officersPending: boolean;
   onOfficerRecruit: (draft: GameOfficerRecruitment) => void;
+  paymentStatus: GamePaymentStatus | null;
+  paymentError: string | null;
+  paymentPending: boolean;
+  onPaymentAction: (action: GamePaymentAction) => void;
   allianceStatus: GameAllianceStatus | null;
   allianceError: string | null;
   alliancePending: boolean;
@@ -1992,6 +2020,7 @@ export type GameNoteDraft = {
 type LegacyMenuEntry =
   | { type: "image"; height: number; src: string; width: number }
   | { type: "external"; key: "board" | "discord"; label: string }
+  | { type: "popup"; key: GameRoute["key"]; windowName: string }
   | { type: "route"; color?: string; id?: string; key: GameRoute["key"] };
 
 const skinBase = "/evolution";
@@ -2021,7 +2050,7 @@ const legacyMenuEntries: LegacyMenuEntry[] = [
   { type: "route", key: "search" },
   { type: "image", height: 35, src: `${skinBase}/gfx/user-menu.jpg`, width: 110 },
   { type: "route", key: "messages" },
-  { type: "route", key: "notes" },
+  { type: "popup", key: "notes", windowName: "Notizen" },
   { type: "route", key: "buddy" },
   { type: "route", key: "options" },
   { type: "route", key: "logout" }
@@ -2199,6 +2228,10 @@ export function LegacyGameOverview({
   officersError,
   officersPending,
   onOfficerRecruit,
+  paymentStatus,
+  paymentError,
+  paymentPending,
+  onPaymentAction,
   allianceStatus,
   allianceError,
   alliancePending,
@@ -2316,6 +2349,10 @@ export function LegacyGameOverview({
     route.key === "officers"
       ? officersError || (officersActionIssue && officersActionIssue.code !== "recruited" ? officersActionIssue.message : "")
       : "";
+  const payment = paymentStatus?.authenticated ? paymentStatus.payment : undefined;
+  const paymentIssue =
+    paymentStatus && !paymentStatus.authenticated ? paymentStatus.issues[0]?.message ?? "Session is invalid." : null;
+  const paymentActionIssue = paymentStatus?.authenticated ? paymentStatus.actionIssue : undefined;
   const alliance = allianceStatus?.authenticated ? allianceStatus.alliance : undefined;
   const allianceIssue =
     allianceStatus && !allianceStatus.authenticated ? allianceStatus.issues[0]?.message ?? "Session is invalid." : null;
@@ -2392,96 +2429,68 @@ export function LegacyGameOverview({
     route.key !== "admin" &&
     route.key !== "empire";
   const hasMenu = !isAllianceInfoPopup && route.key !== "notes" && route.key !== "report" && route.key !== "phalanx";
-  const hasOverviewPageMessage =
-    hasHeader && Boolean(overview && route.key === "overview" && overview.messages && overview.messages.length > 0);
-  const hasOverviewPageError =
-    hasHeader && Boolean(overview && route.key === "overview" && overview.errors && overview.errors.length > 0);
+  const hasLegacyPageFooter =
+    route.key !== "admin" && route.key !== "logout" && route.key !== "report" && route.key !== "phalanx";
   const searchPageMessage =
     route.key === "search" && search?.message && !isSearchPageErrorMessage(search.message) ? search.message : "";
   const searchPageError =
     route.key === "search" && search?.message && isSearchPageErrorMessage(search.message) ? search.message : "";
-  const hasSearchPageFooter = Boolean(searchPageMessage || searchPageError);
-  const hasOfficersPageFooter = Boolean(officersPageMessage || officersPageError);
+  const pageFooterMessages = hasLegacyPageFooter
+    ? [
+        ...(route.key === "overview" ? overview?.messages ?? [] : []),
+        ...(searchPageMessage ? [searchPageMessage] : []),
+        ...(officersPageMessage ? [officersPageMessage] : [])
+      ]
+    : [];
+  const pageFooterErrors = hasLegacyPageFooter
+    ? [
+        ...(overview?.errors ?? []),
+        ...(searchPageError ? [searchPageError] : []),
+        ...(officersPageError ? [officersPageError] : [])
+      ]
+    : [];
+  const hasPageFooterMessage = pageFooterMessages.length > 0;
+  const hasPageFooterError = pageFooterErrors.length > 0;
+  const pageFooterMessageKey = pageFooterMessages.join("\n");
+  const pageFooterErrorKey = pageFooterErrors.join("\n");
   const pageMessageRef = React.useRef<HTMLDivElement | null>(null);
   const pageErrorRef = React.useRef<HTMLDivElement | null>(null);
-  const searchMessageRef = React.useRef<HTMLDivElement | null>(null);
-  const searchErrorRef = React.useRef<HTMLDivElement | null>(null);
-  const officersMessageRef = React.useRef<HTMLDivElement | null>(null);
-  const officersErrorRef = React.useRef<HTMLDivElement | null>(null);
   const adminMessageRef = React.useRef<HTMLDivElement | null>(null);
   const adminErrorRef = React.useRef<HTMLDivElement | null>(null);
-  const [overviewContentLayout, setOverviewContentLayout] = React.useState<{ height: string; top: number; errorTop: number } | null>(
+  const [pageFooterContentLayout, setPageFooterContentLayout] = React.useState<{ height: string; top: number; errorTop: number } | null>(
     null
   );
-  const [searchContentLayout, setSearchContentLayout] = React.useState<{ height: string; top: number; errorTop: number } | null>(
-    null
-  );
-  const [officersContentLayout, setOfficersContentLayout] = React.useState<{
-    height: string;
-    top: number;
-    errorTop: number;
-  } | null>(null);
   const [adminContentLayout, setAdminContentLayout] = React.useState<{ height: string; top: number; errorTop: number } | null>(null);
   React.useLayoutEffect(() => {
-    if (route.key !== "overview") {
-      setOverviewContentLayout(null);
+    const needsLegacyPageFooterLayout =
+      hasLegacyPageFooter && (route.key === "overview" || hasPageFooterMessage || hasPageFooterError);
+    if (!needsLegacyPageFooterLayout) {
+      setPageFooterContentLayout(null);
       return;
     }
-    const updateOverviewContentLayout = () => {
-      const headerHeight = 81;
+    const updatePageFooterContentLayout = () => {
+      const headerHeight = hasHeader ? 81 : 0;
       const messageHeight = pageMessageRef.current?.offsetHeight ?? 0;
       const errorHeight = pageErrorRef.current?.offsetHeight ?? 0;
       const errorTop = headerHeight + messageHeight + 5;
       const top = headerHeight + errorHeight + messageHeight + 10;
       const height = `${Math.max(0, window.innerHeight - messageHeight - errorHeight - headerHeight - 20)}px`;
-      setOverviewContentLayout((current) =>
+      setPageFooterContentLayout((current) =>
         current?.top === top && current.height === height && current.errorTop === errorTop ? current : { height, top, errorTop }
       );
     };
-    updateOverviewContentLayout();
-    window.addEventListener("resize", updateOverviewContentLayout);
-    return () => window.removeEventListener("resize", updateOverviewContentLayout);
-  }, [hasOverviewPageError, hasOverviewPageMessage, route.key]);
-  React.useLayoutEffect(() => {
-    if (route.key !== "search" || !hasSearchPageFooter) {
-      setSearchContentLayout(null);
-      return;
-    }
-    const updateSearchContentLayout = () => {
-      const headerHeight = 81;
-      const messageHeight = searchMessageRef.current?.offsetHeight ?? 0;
-      const errorHeight = searchErrorRef.current?.offsetHeight ?? 0;
-      const top = headerHeight + errorHeight + messageHeight + 10;
-      const height = `${Math.max(0, window.innerHeight - messageHeight - errorHeight - headerHeight - 20)}px`;
-      const errorTop = headerHeight + messageHeight + 5;
-      setSearchContentLayout((current) =>
-        current?.top === top && current.height === height && current.errorTop === errorTop ? current : { height, top, errorTop }
-      );
-    };
-    updateSearchContentLayout();
-    window.addEventListener("resize", updateSearchContentLayout);
-    return () => window.removeEventListener("resize", updateSearchContentLayout);
-  }, [hasSearchPageFooter, route.key, searchPageError, searchPageMessage]);
-  React.useLayoutEffect(() => {
-    if (route.key !== "officers" || !hasOfficersPageFooter) {
-      setOfficersContentLayout(null);
-      return;
-    }
-    const updateOfficersContentLayout = () => {
-      const headerHeight = 81;
-      const messageHeight = officersMessageRef.current?.offsetHeight ?? 0;
-      const errorHeight = officersErrorRef.current?.offsetHeight ?? 0;
-      const top = headerHeight + errorHeight + messageHeight + 10;
-      const height = `${Math.max(0, window.innerHeight - messageHeight - errorHeight - headerHeight - 20)}px`;
-      const errorTop = headerHeight + messageHeight + 5;
-      setOfficersContentLayout((current) =>
-        current?.top === top && current.height === height && current.errorTop === errorTop ? current : { height, top, errorTop }
-      );
-    };
-    updateOfficersContentLayout();
-    window.addEventListener("resize", updateOfficersContentLayout);
-    return () => window.removeEventListener("resize", updateOfficersContentLayout);
-  }, [hasOfficersPageFooter, officersPageError, officersPageMessage, route.key]);
+    updatePageFooterContentLayout();
+    window.addEventListener("resize", updatePageFooterContentLayout);
+    return () => window.removeEventListener("resize", updatePageFooterContentLayout);
+  }, [
+    hasHeader,
+    hasLegacyPageFooter,
+    hasPageFooterError,
+    hasPageFooterMessage,
+    pageFooterErrorKey,
+    pageFooterMessageKey,
+    route.key
+  ]);
   React.useLayoutEffect(() => {
     if (route.key !== "admin" || (!adminPageMessage && !adminPageError)) {
       setAdminContentLayout(null);
@@ -2517,19 +2526,14 @@ export function LegacyGameOverview({
       : route.key === "notes" || route.key === "report" || route.key === "phalanx" || isAllianceInfoPopup
         ? "legacy-content legacy-content-popup"
         : "legacy-content";
+  const usesPageFooterLayout = route.key === "overview" || hasPageFooterMessage || hasPageFooterError;
   const contentStyle: React.CSSProperties =
-    route.key === "overview"
-      ? overviewContentLayout
-        ? { height: overviewContentLayout.height, top: `${overviewContentLayout.top}px` }
-        : { height: "calc(100vh - 124px)" }
-      : hasSearchPageFooter
-        ? searchContentLayout
-          ? { height: searchContentLayout.height, top: `${searchContentLayout.top}px` }
-          : { height: "calc(100vh - 130px)", top: "120px" }
-      : hasOfficersPageFooter
-        ? officersContentLayout
-          ? { height: officersContentLayout.height, top: `${officersContentLayout.top}px` }
-          : { height: "calc(100vh - 130px)", top: "120px" }
+    usesPageFooterLayout
+      ? pageFooterContentLayout
+        ? { height: pageFooterContentLayout.height, top: `${pageFooterContentLayout.top}px` }
+        : hasHeader
+          ? { height: "calc(100vh - 101px)", top: "91px" }
+          : { height: "calc(100vh - 20px)", top: "10px" }
       : route.key === "admin" && adminContentLayout
         ? { height: adminContentLayout.height, top: `${adminContentLayout.top}px` }
       : route.key === "galaxy" ||
@@ -2594,30 +2598,14 @@ export function LegacyGameOverview({
           menuLinks={overview?.menuLinks}
         />
       ) : null}
-      {hasOverviewPageMessage && overview?.messages ? (
-        <LegacyPageMessage ref={pageMessageRef} messages={overview.messages} />
+      {hasPageFooterMessage ? (
+        <LegacyPageMessage ref={pageMessageRef} messages={pageFooterMessages} style={hasHeader ? undefined : { top: 0 }} />
       ) : null}
-      {hasOverviewPageError && overview?.errors ? (
+      {hasPageFooterError ? (
         <LegacyPageError
           ref={pageErrorRef}
-          messages={overview.errors}
-          style={{ top: overviewContentLayout && hasOverviewPageMessage ? `${overviewContentLayout.errorTop}px` : "86px" }}
-        />
-      ) : null}
-      {searchPageMessage ? <LegacyPageMessage ref={searchMessageRef} messages={[searchPageMessage]} /> : null}
-      {searchPageError ? (
-        <LegacyPageError
-          ref={searchErrorRef}
-          messages={[searchPageError]}
-          style={{ top: searchContentLayout && searchPageMessage ? `${searchContentLayout.errorTop}px` : "86px" }}
-        />
-      ) : null}
-      {officersPageMessage ? <LegacyPageMessage ref={officersMessageRef} messages={[officersPageMessage]} /> : null}
-      {officersPageError ? (
-        <LegacyPageError
-          ref={officersErrorRef}
-          messages={[officersPageError]}
-          style={{ top: officersContentLayout && officersPageMessage ? `${officersContentLayout.errorTop}px` : "80px" }}
+          messages={pageFooterErrors}
+          style={{ top: pageFooterContentLayout ? `${pageFooterContentLayout.errorTop}px` : hasHeader ? "86px" : "5px" }}
         />
       ) : null}
       {adminPageMessage ? <LegacyPageMessage ref={adminMessageRef} messages={[adminPageMessage]} style={{ top: 0 }} /> : null}
@@ -2660,6 +2648,8 @@ export function LegacyGameOverview({
         {route.key === "officers" && !officersPageError && !officersPageMessage && officersIssue ? (
           <LegacyMessage tone="error" text={officersIssue} />
         ) : null}
+        {route.key === "payment" && paymentError ? <LegacyMessage tone="error" text={paymentError} /> : null}
+        {route.key === "payment" && !paymentError && paymentIssue ? <LegacyMessage tone="error" text={paymentIssue} /> : null}
         {route.key === "alliance" && allianceError ? <LegacyMessage tone="error" text={allianceError} /> : null}
         {route.key === "alliance" && !allianceError && allianceActionIssue ? (
           <LegacyMessage tone={allianceActionTone} text={allianceActionIssue.message} />
@@ -2758,6 +2748,14 @@ export function LegacyGameOverview({
         ) : null}
         {officers && route.key === "officers" ? (
           <OfficersTable officers={officers} onRecruit={onOfficerRecruit} pending={officersPending} />
+        ) : null}
+        {overview && route.key === "payment" && !paymentStatus && !paymentError ? (
+          <LegacyMessage tone="neutral" text="Loading payment..." />
+        ) : null}
+        {paymentStatus?.authenticated && route.key === "payment" ? (
+          <LegacyCenter>
+            <PaymentTable actionIssue={paymentActionIssue} onAction={onPaymentAction} payment={payment} pending={paymentPending} />
+          </LegacyCenter>
         ) : null}
         {overview && route.key === "alliance" && !alliance && !allianceError && !allianceIssue && !allianceActionIssue ? (
           <LegacyMessage tone="neutral" text="Loading alliance..." />
@@ -3148,6 +3146,9 @@ function LegacyLeftMenu({
                 if (entry.type === "external") {
                   return <LegacyMenuExternal entry={entry} key={entry.key} menuLinks={menuLinks} />;
                 }
+                if (entry.type === "popup") {
+                  return <LegacyMenuPopup entry={entry} key={entry.key} />;
+                }
                 return <LegacyMenuRoute activeRoute={activeRoute} entry={entry} key={entry.key} />;
               })}
             </tbody>
@@ -3169,6 +3170,31 @@ function LegacyMenuExternal({ entry, menuLinks }: { entry: Extract<LegacyMenuEnt
         <div className="legacy-center">
           <a href={url} target="_blank">
             {entry.label}
+          </a>
+        </div>
+      </td>
+    </tr>
+  );
+}
+
+function LegacyMenuPopup({ entry }: { entry: Extract<LegacyMenuEntry, { type: "popup" }> }) {
+  const route = gameRouteByKey.get(entry.key);
+  if (!route) {
+    return null;
+  }
+  return (
+    <tr>
+      <td>
+        <div className="legacy-center">
+          <a
+            data-legacy-popup={entry.windowName}
+            href={gameMenuRouteURL(route.path, window.location.search)}
+            onClick={(event) => {
+              event.preventDefault();
+              openLegacyPopup(event.currentTarget.href, entry.windowName);
+            }}
+          >
+            {route.label}
           </a>
         </div>
       </td>
@@ -3744,7 +3770,7 @@ function OfficersTable({
             </td>
             <td className="legacy-l l" style={{ textAlign: "center", verticalAlign: "middle", width: 90 }}>
               <a
-                href={gameRouteURL("/game/officers", window.location.search)}
+                href={gameRouteURL("/game/payment", window.location.search)}
                 id="darkmatter2"
                 style={{ cursor: "pointer", height: 60, textAlign: "center", width: 100 }}
               >
@@ -3888,6 +3914,116 @@ function officerRecruitHref(officerID: number, days: number) {
   query.set("type", String(officerID));
   query.set("days", String(days));
   return gameRouteURL("/game/officers", `?${query.toString()}`);
+}
+
+function PaymentTable({
+  actionIssue,
+  onAction,
+  payment,
+  pending
+}: {
+  actionIssue?: { code: string; message: string };
+  onAction: (action: GamePaymentAction) => void;
+  payment?: GamePaymentStatus["payment"];
+  pending: boolean;
+}) {
+  const [couponCode, setCouponCode] = React.useState("");
+  React.useEffect(() => {
+    if (actionIssue?.code === "invalid_coupon") {
+      setCouponCode("");
+    }
+  }, [actionIssue?.code]);
+  const coupon = payment?.coupon;
+  if (coupon && actionIssue?.code === "coupon_valid") {
+    return (
+      <form
+        acceptCharset="text/plain; charset=utf-8"
+        action={gameRouteURL("/game/payment", window.location.search)}
+        method="post"
+        onSubmit={(event) => {
+          event.preventDefault();
+          if (!pending) {
+            onAction({ action: "activate", couponCode: coupon.code });
+          }
+        }}
+      >
+        <input name="action" type="hidden" value="activate" />
+        <input name="couponcode" type="hidden" value={coupon.code} />
+        <table className="ordertable legacy-payment-table">
+          <tbody>
+            <tr>
+              <td className="c" colSpan={2}>
+                <big>Dark Matter {formatLegacyNumber(coupon.amount)} !</big>
+              </td>
+            </tr>
+            <tr>
+              <td colSpan={2}>
+                <LegacyCenter>
+                  <input disabled={pending} type="submit" value="Redeem!" />
+                </LegacyCenter>
+              </td>
+            </tr>
+          </tbody>
+        </table>
+      </form>
+    );
+  }
+  const couponError = actionIssue?.code === "invalid_coupon" ? actionIssue.message : "";
+  return (
+    <form
+      acceptCharset="text/plain; charset=utf-8"
+      action={gameRouteURL("/game/payment", window.location.search)}
+      method="post"
+      onSubmit={(event) => {
+        event.preventDefault();
+        if (!pending) {
+          onAction({ action: "check", couponCode });
+        }
+      }}
+    >
+      <input name="action" type="hidden" value="check" />
+      <table className="ordertable legacy-payment-table">
+        <tbody>
+          <tr>
+            <td className="c" colSpan={2}>
+              Use coupon.
+            </td>
+          </tr>
+          <tr>
+            <td className="left" colSpan={2}>
+              Enter your coupon code here.
+            </td>
+          </tr>
+          <tr>
+            <td className="left">Coupon Code:</td>
+            <td className="right">
+              <input
+                disabled={pending}
+                name="couponcode"
+                onChange={(event) => setCouponCode(event.target.value)}
+                size={30}
+                type="text"
+                value={couponCode}
+              />
+            </td>
+          </tr>
+          {couponError ? (
+            <tr>
+              <td className="left">Coupon Error:</td>
+              <td className="right">{couponError}</td>
+            </tr>
+          ) : null}
+          <tr>
+            <td colSpan={2}>
+              <LegacyCenter>
+                <input disabled={pending} type="submit" value="Check coupon" />
+              </LegacyCenter>
+            </td>
+          </tr>
+        </tbody>
+      </table>
+    </form>
+  );
 }
 
 function AdminTable({ actionIssue, admin, onAdminAction }: { actionIssue?: GameAdminActionIssue; admin: GameAdmin; onAdminAction: (action: GameAdminAction) => void }) {

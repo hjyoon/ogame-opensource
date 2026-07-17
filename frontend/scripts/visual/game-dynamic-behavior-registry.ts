@@ -153,6 +153,72 @@ const officerPurchaseVisualSpecs: GameDynamicBehaviorSpec[] = officerPurchaseTar
 export const gameDynamicBehaviorSpecs: GameDynamicBehaviorSpec[] = [
   ...officerPurchaseVisualSpecs,
   {
+    name: "officers-dark-matter-payment-navigation",
+    legacyPage: "micropayment",
+    migratedPath: "/game/officers",
+    legacyReady: "#content div#darkmatter2 a[href*='page=payment']",
+    migratedReady: ".legacy-officers-table a[href*='/game/payment']",
+    actions: [
+      {
+        type: "click",
+        legacySelector: "#content div#darkmatter2 a[href*='page=payment']",
+        migratedSelector: ".legacy-officers-table a[href*='/game/payment']",
+        waitForSelector: "input[name='couponcode']"
+      }
+    ],
+    assertions: [
+      {
+        name: "payment-route",
+        type: "evaluate",
+        expression:
+          "(() => { const url = new URL(window.location.href); return url.pathname === '/game/payment' || (url.pathname === '/game/index.php' && url.searchParams.get('page') === 'payment'); })()",
+        expected: "true"
+      },
+      { name: "coupon-code-input", type: "visible", selector: "input[name='couponcode']", expected: "true" },
+      { name: "coupon-check-button", type: "visible", selector: "input[value='Check coupon']", expected: "true" }
+    ],
+    visual: {
+      enabled: true,
+      normalizePageName: "game-payment"
+    },
+    linkAudit: {
+      expected: [
+        {
+          name: "dark-matter-payment-target",
+          target: "/game/payment",
+          scope: "action",
+          classification: "visual"
+        }
+      ]
+    },
+    notes: ["Covers the Dark Matter call-to-action opening the legacy coupon payment screen instead of reloading Officers."]
+  },
+  {
+    name: "payment-invalid-coupon",
+    legacyPage: "payment",
+    migratedPath: "/game/payment",
+    legacyReady: "#content input[name='couponcode']",
+    migratedReady: ".legacy-payment-table input[name='couponcode']",
+    actions: [
+      { type: "fill", selector: "input[name='couponcode']", value: "AAAAAAAAAAAAAAAAAAAAAAAA" },
+      { type: "click", selector: "input[value='Check coupon']", waitForSelector: "text=Incorrect code or coupon already redeemed" }
+    ],
+    assertions: [
+      {
+        name: "invalid-coupon-message",
+        type: "text",
+        selector: ".legacy-payment-table, #content .ordertable",
+        contains: "Incorrect code or coupon already redeemed"
+      },
+      { name: "coupon-input-reset", type: "value", selector: "input[name='couponcode']", expected: "" }
+    ],
+    visual: {
+      enabled: true,
+      normalizePageName: "game-payment"
+    },
+    notes: ["Covers the coupon validation error row and legacy input reset behavior."]
+  },
+  {
     name: "messages-compose-text-counter",
     legacyPage: "writemessages",
     legacyQuery: { messageziel: "1" },
@@ -493,6 +559,76 @@ export const gameDynamicBehaviorSpecs: GameDynamicBehaviorSpec[] = [
       ]
     },
     notes: ["Covers showFleetMenu(...) Attack links embedded inside spy report message bodies."]
+  },
+  {
+    name: "notes-menu-popup-link",
+    legacyPage: "overview",
+    migratedPath: "/game/overview",
+    legacyReady: "#menu a[onclick*='page=notizen']",
+    migratedReady: ".legacy-menu a[data-legacy-popup='Notizen'][href*='/game/notes']",
+    actions: [
+      {
+        type: "popup",
+        legacySelector: "#menu a[onclick*='page=notizen']",
+        migratedSelector: ".legacy-menu a[data-legacy-popup='Notizen'][href*='/game/notes']",
+        legacyPopupWaitForSelector: "#content",
+        migratedPopupWaitForSelector: ".legacy-notes-table"
+      }
+    ],
+    assertions: [
+      {
+        name: "source-remains-overview",
+        type: "evaluate",
+        expression:
+          "window.location.pathname === '/game/overview' || (window.location.pathname === '/game/index.php' && new URL(window.location.href).searchParams.get('page') === 'overview')",
+        expected: "true"
+      },
+      {
+        name: "popup-body",
+        type: "evaluate",
+        expression: "window.__ogameDynamicPopup?.bodyText ?? ''",
+        contains: "Notes"
+      },
+      {
+        name: "popup-name",
+        type: "evaluate",
+        expression: "window.__ogameDynamicPopup?.name ?? ''",
+        compareSides: true,
+        expected: "Notizen"
+      },
+      {
+        name: "popup-width",
+        type: "evaluate",
+        expression: "window.__ogameDynamicPopup?.innerWidth ?? 0",
+        compareSides: true,
+        tolerance: 4
+      },
+      {
+        name: "popup-height",
+        type: "evaluate",
+        expression: "window.__ogameDynamicPopup?.innerHeight ?? 0",
+        compareSides: true,
+        tolerance: 4
+      },
+      {
+        name: "popup-route",
+        type: "evaluate",
+        expression:
+          "(() => { const url = new URL(window.__ogameDynamicPopup?.url ?? window.location.href); return url.pathname === '/game/notes' || (url.pathname === '/game/index.php' && url.searchParams.get('page') === 'notizen'); })()",
+        expected: "true"
+      }
+    ],
+    linkAudit: {
+      expected: [
+        {
+          name: "notes-popup-target",
+          target: "/game/notes",
+          scope: "action",
+          classification: "popup"
+        }
+      ]
+    },
+    notes: ["Covers the left-menu Notes link opening the legacy-sized named Notizen popup while the source page remains on Overview."]
   },
   {
     name: "notes-create-text-counter",

@@ -25,6 +25,8 @@ import {
   type GameMCPTokensStatus,
   type GameOfficerRecruitment,
   type GameOfficersStatus,
+  type GamePaymentAction,
+  type GamePaymentStatus,
   type GameNoteDraft,
   type GameNotesStatus,
   type GameOptionsStatus,
@@ -359,6 +361,9 @@ function App() {
   const [gameOfficers, setGameOfficers] = useState<GameOfficersStatus | null>(null);
   const [gameOfficersError, setGameOfficersError] = useState<string | null>(null);
   const [gameOfficersPending, setGameOfficersPending] = useState(false);
+  const [gamePayment, setGamePayment] = useState<GamePaymentStatus | null>(null);
+  const [gamePaymentError, setGamePaymentError] = useState<string | null>(null);
+  const [gamePaymentPending, setGamePaymentPending] = useState(false);
   const [gameAlliance, setGameAlliance] = useState<GameAllianceStatus | null>(null);
   const [gameAllianceError, setGameAllianceError] = useState<string | null>(null);
   const [gameAlliancePending, setGameAlliancePending] = useState(false);
@@ -1069,6 +1074,60 @@ function App() {
       })
       .catch((err: unknown) => setGameOfficersError(err instanceof Error ? err.message : String(err)))
       .finally(() => setGameOfficersPending(false));
+  };
+
+  useEffect(() => {
+    const publicSession = new URLSearchParams(search).get("session") ?? "";
+    if (gameRoute?.key !== "payment" || publicSession === "") {
+      setGamePayment(null);
+      setGamePaymentError(null);
+      setGamePaymentPending(false);
+      return;
+    }
+    const paymentSearch = new URLSearchParams({ session: publicSession });
+    fetch(`/api/game/payment?${paymentSearch.toString()}`, { credentials: "same-origin" })
+      .then((response) => response.json() as Promise<GamePaymentStatus>)
+      .then((payload) => {
+        setGamePayment(payload);
+        setGamePaymentError(null);
+      })
+      .catch((err: unknown) => setGamePaymentError(err instanceof Error ? err.message : String(err)));
+  }, [gameRoute?.key, search]);
+
+  const submitGamePaymentAction = (action: GamePaymentAction) => {
+    const publicSession = new URLSearchParams(search).get("session") ?? "";
+    if (publicSession === "") {
+      setGamePaymentError("Session is invalid.");
+      return;
+    }
+    const paymentSearch = new URLSearchParams({ session: publicSession });
+    setGamePaymentPending(true);
+    setGamePaymentError(null);
+    fetch(`/api/game/payment?${paymentSearch.toString()}`, {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      credentials: "same-origin",
+      body: JSON.stringify(action)
+    })
+      .then(async (response) => {
+        const text = await response.text();
+        const payload = text ? (JSON.parse(text) as GamePaymentStatus) : null;
+        if (!response.ok && response.status !== 401) {
+          throw new Error(text || `payment returned ${response.status}`);
+        }
+        if (!payload) {
+          throw new Error("payment response was empty");
+        }
+        return payload;
+      })
+      .then((payload) => {
+        setGamePayment(payload);
+        if (payload.actionIssue?.code === "coupon_activated") {
+          dispatchClientNavigation(gameRouteURL("/game/officers", search));
+        }
+      })
+      .catch((err: unknown) => setGamePaymentError(err instanceof Error ? err.message : String(err)))
+      .finally(() => setGamePaymentPending(false));
   };
 
   const syncGameOverviewFromAlliance = (payload: GameAllianceStatus) => {
@@ -2549,6 +2608,9 @@ function App() {
         officersError={gameOfficersError}
         officersPending={gameOfficersPending}
         officersStatus={gameOfficers}
+        paymentError={gamePaymentError}
+        paymentPending={gamePaymentPending}
+        paymentStatus={gamePayment}
         optionsError={gameOptionsError}
         optionsPending={gameOptionsPending}
         optionsStatus={gameOptions}
@@ -2576,6 +2638,7 @@ function App() {
         onMerchantCall={submitGameMerchantCall}
         onMerchantTrade={submitGameMerchantTrade}
         onOfficerRecruit={submitGameOfficerRecruit}
+        onPaymentAction={submitGamePaymentAction}
         onPlanetDelete={submitGamePlanetDelete}
         onPlanetRename={submitGamePlanetRename}
         onResourcesSubmit={submitGameResources}

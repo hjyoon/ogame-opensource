@@ -287,6 +287,11 @@ export async function normalizeDynamicPageParts(page: Page, side: SideName, spec
           }
         }
       }
+      if (currentPageName === "game-payment") {
+        for (const menu of document.querySelectorAll<HTMLElement>("#menu, .legacy-menu")) {
+          menu.style.zIndex = "1";
+        }
+      }
       if (currentPageName === "game-admin-fleetlogs") {
         hide("#content table, .legacy-admin-fleetlogs-table");
         for (const cell of document.querySelectorAll<HTMLElement>("#content table th, #content table td, .legacy-admin-fleetlogs-table th, .legacy-admin-fleetlogs-table td")) {

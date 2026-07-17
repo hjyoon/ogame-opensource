@@ -100,6 +100,7 @@ try {
   await assertMerchantInsufficientDarkMatter(page);
   await assertGameClientNavigation(page, "game officers menu preserves CSR", ".legacy-menu a[href^='/game/officers']", "/game/officers", "Officers Recruitment");
   await assertOfficerInsufficientDarkMatter(page);
+  await assertPaymentNavigationAndInvalidCoupon(page);
   await assertGameClientNavigation(page, "game research menu preserves CSR", "a[href^='/game/research']", "/game/research", "Research");
   await assertGameClientNavigation(page, "game shipyard menu preserves CSR", "a[href^='/game/shipyard']", "/game/shipyard", "Shipyard");
   await assertGameClientNavigation(page, "game defense menu preserves CSR", "a[href^='/game/defense']", "/game/defense", "Defense");
@@ -115,9 +116,8 @@ try {
   await assertGameClientNavigation(page, "game options menu preserves CSR", "a[href^='/game/options']", "/game/options", "Options");
   await assertOptionsMutationFlow(page);
   await assertMCPGuideFlow(page);
-  await assertGameClientNavigation(page, "game notes menu preserves CSR", "a[href^='/game/notes']", "/game/notes", "Notes");
-  await assertNotesMutationFlow(page);
-  await assertGameProgrammaticNavigation(page, "game overview popstate from notes preserves CSR", "/game/overview", "Overview");
+  await assertNotesPopupFlow(page);
+  await assertGameProgrammaticNavigation(page, "game overview navigation after notes popup preserves CSR", "/game/overview", "Overview");
   await assertGameLogout(page);
 
   const report = {
@@ -685,6 +685,43 @@ async function assertOfficerInsufficientDarkMatter(page: Page) {
   });
 }
 
+async function assertPaymentNavigationAndInvalidCoupon(page: Page) {
+  const marker = "probe-game-payment";
+  await page.evaluate((value) => {
+    window.__ogameCsrProbe = value;
+  }, marker);
+  await page.locator(".legacy-officers-table a[href^='/game/payment']").click();
+  await page.waitForFunction(() => window.location.pathname === "/game/payment", undefined, { timeout: 5_000 });
+  await page.locator(".legacy-payment-table input[name='couponcode']").waitFor({ timeout: 10_000 });
+  await page.locator(".legacy-payment-table input[name='couponcode']").fill("AAAAAAAAAAAAAAAAAAAAAAAA");
+  await page.locator(".legacy-payment-table input[value='Check coupon']").click();
+  await page.waitForFunction(() => document.body.textContent?.includes("Incorrect code or coupon already redeemed"), undefined, {
+    timeout: 10_000
+  });
+  await record("game Dark Matter link and invalid coupon preserve CSR", async () => {
+    const state = await page.evaluate(() => ({
+      pathname: window.location.pathname,
+      search: window.location.search,
+      probe: window.__ogameCsrProbe,
+      paymentTable: document.querySelector(".legacy-payment-table") !== null,
+      paymentText: document.querySelector(".legacy-payment-table")?.textContent?.trim().replace(/\s+/g, " ") ?? "",
+      couponValue: document.querySelector<HTMLInputElement>(".legacy-payment-table input[name='couponcode']")?.value ?? "",
+      pendingText: document.body.textContent?.includes("Loading payment...") ?? false
+    }));
+    return {
+      pass:
+        state.pathname === "/game/payment" &&
+        state.search.includes("session=") &&
+        state.probe === marker &&
+        state.paymentTable &&
+        state.paymentText.includes("Incorrect code or coupon already redeemed") &&
+        state.couponValue === "" &&
+        !state.pendingText,
+      details: state
+    };
+  });
+}
+
 async function assertOptionsMutationFlow(page: Page) {
   const marker = "probe-game-options-submit";
   await page.evaluate((value) => {
@@ -860,6 +897,61 @@ async function assertNotesMutationFlow(page: Page) {
         !state.details.notesText.includes(updatedSubject) &&
         state.details.pendingText === false,
       details: state.details
+    };
+  });
+}
+
+async function assertNotesPopupFlow(page: Page) {
+  const marker = "probe-game-notes-popup";
+  await page.evaluate((value) => {
+    window.__ogameCsrProbe = value;
+  }, marker);
+  const sourceURL = new URL(page.url());
+  const popupPromise = page.waitForEvent("popup", { timeout: 5_000 });
+  await page.locator(".legacy-menu a[data-legacy-popup='Notizen'][href^='/game/notes']").click();
+  const popup = await popupPromise;
+  try {
+    await popup.waitForLoadState("domcontentloaded", { timeout: 10_000 });
+    await popup.locator(".legacy-notes-table").waitFor({ timeout: 10_000 });
+    const popupState = await popup.evaluate(() => ({
+      hasOpener: window.opener !== null,
+      height: window.innerHeight,
+      name: window.name,
+      pathname: window.location.pathname,
+      search: window.location.search,
+      width: window.innerWidth
+    }));
+    const sourceState = await page.evaluate(() => ({
+      pathname: window.location.pathname,
+      probe: window.__ogameCsrProbe,
+      search: window.location.search
+    }));
+    await record("game notes menu opens the legacy named popup", async () => ({
+      pass:
+        sourceState.pathname === sourceURL.pathname &&
+        sourceState.search === sourceURL.search &&
+        sourceState.probe === marker &&
+        popupState.pathname === "/game/notes" &&
+        popupState.search.includes("session=") &&
+        popupState.hasOpener &&
+        popupState.name === "Notizen" &&
+        Math.abs(popupState.width - 550) <= 4 &&
+        Math.abs(popupState.height - 280) <= 4,
+      details: { popupState, sourceState }
+    }));
+    await assertNotesMutationFlow(popup);
+  } finally {
+    await popup.close().catch(() => undefined);
+  }
+  await record("game notes popup leaves the source page active", async () => {
+    const sourceState = await page.evaluate(() => ({
+      pathname: window.location.pathname,
+      probe: window.__ogameCsrProbe,
+      search: window.location.search
+    }));
+    return {
+      pass: sourceState.pathname === sourceURL.pathname && sourceState.search === sourceURL.search && sourceState.probe === marker,
+      details: sourceState
     };
   });
 }

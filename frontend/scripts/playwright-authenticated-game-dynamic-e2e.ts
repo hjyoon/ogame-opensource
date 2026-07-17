@@ -839,8 +839,11 @@ function legacyPagePath(page: string, params: URLSearchParams): string {
   if (page === "trader") {
     return "/game/merchant";
   }
-  if (page === "micropayment" || page === "payment") {
+  if (page === "micropayment") {
     return "/game/officers";
+  }
+  if (page === "payment") {
+    return "/game/payment";
   }
   if (page === "imperium") {
     return "/game/empire";
@@ -1178,6 +1181,7 @@ async function performAction(page: Page, side: SideName, action: GameDynamicActi
       bodyText: document.body?.innerText ?? "",
       innerHeight: window.innerHeight,
       innerWidth: window.innerWidth,
+      name: window.name,
       title: document.title,
       url: window.location.href
     }));

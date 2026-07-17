@@ -1283,6 +1283,10 @@ body.legacy-game-body {
   font-weight: bold;
 }
 
+.legacy-game-shell .legacy-options-table p {
+  margin: 0 0 1em;
+}
+
 .legacy-game-shell .legacy-mcp-guide-table td.legacy-l {
   width: 125px;
 }

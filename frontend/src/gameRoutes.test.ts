@@ -24,6 +24,7 @@ describe("game route model", () => {
     expect(gameRoutes.map((route) => route.path)).toContain("/game/report");
     expect(gameRoutes.map((route) => route.path)).toContain("/game/merchant");
     expect(gameRoutes.map((route) => route.path)).toContain("/game/officers");
+    expect(gameRoutes.map((route) => route.path)).toContain("/game/payment");
     expect(gameRoutes.map((route) => route.path)).toContain("/game/jump-gate");
     expect(gameRoutes.map((route) => route.path)).toContain("/game/mcp-guide");
   });
@@ -60,6 +61,7 @@ describe("game route model", () => {
     expect(resolveGameRoute("/game/resources")).toMatchObject({ key: "resources", migrated: true });
     expect(resolveGameRoute("/game/merchant")).toMatchObject({ key: "merchant", migrated: true });
     expect(resolveGameRoute("/game/officers")).toMatchObject({ key: "officers", migrated: true });
+    expect(resolveGameRoute("/game/payment")).toMatchObject({ key: "payment", migrated: true });
     expect(resolveGameRoute("/game/research")).toMatchObject({ key: "research", migrated: true });
     expect(resolveGameRoute("/game/shipyard")).toMatchObject({ key: "shipyard", migrated: true });
     expect(resolveGameRoute("/game/fleet")).toMatchObject({ key: "fleet", migrated: true });
@@ -106,6 +108,7 @@ describe("game route model", () => {
     expect(resolveGameRoute("/game/index.php", "?page=imperium")).toMatchObject({ key: "empire", migrated: true });
     expect(resolveGameRoute("/game/index.php", "?page=trader")).toMatchObject({ key: "merchant", migrated: true });
     expect(resolveGameRoute("/game/index.php", "?page=micropayment")).toMatchObject({ key: "officers", migrated: true });
+    expect(resolveGameRoute("/game/index.php", "?page=payment")).toMatchObject({ key: "payment", migrated: true });
     expect(resolveGameRoute("/game/index.php", "?page=admin")).toMatchObject({ key: "admin", migrated: true });
     expect(resolveGameRoute("/game/index.php", "?page=overview_events")).toMatchObject({ key: "overview", migrated: true });
     expect(resolveGameRoute("/game/index.php", "?page=event_list")).toMatchObject({ key: "overview", migrated: true });

@@ -228,6 +228,7 @@ try {
     const activationControl = page.locator("input[name='validate']");
     const activationControls = await activationControl.count();
     const activationValue = activationControls === 1 ? await activationControl.inputValue() : "";
+    const optionsActivationNotice = await readActivationNotice(page, auth);
     record("unvalidated account renders options screen", {
       pass:
         body.includes("User Data") &&
@@ -239,8 +240,42 @@ try {
         activationValue === "Request an activation link" &&
         !body.includes("General Options") &&
         !body.includes("Session is invalid.") &&
+        optionsActivationNotice.pass &&
         signalsClean(signals),
-      details: { emailControls, passwordControls, activationControls, activationValue, signals }
+      details: { emailControls, passwordControls, activationControls, activationValue, optionsActivationNotice, signals }
+    });
+
+    const activationRoutes = [
+      "/game/buildings",
+      "/game/resources",
+      "/game/merchant",
+      "/game/officers",
+      "/game/payment",
+      "/game/research",
+      "/game/shipyard",
+      "/game/fleet",
+      "/game/galaxy",
+      "/game/defense",
+      "/game/alliance",
+      "/game/technology",
+      "/game/statistics",
+      "/game/search",
+      "/game/messages",
+      "/game/notes",
+      "/game/buddy",
+      "/game/options",
+      "/game/changelog",
+      "/game/mcp-guide",
+      "/game/rename-planet"
+    ];
+    const activationRouteResults: Record<string, Awaited<ReturnType<typeof readActivationNotice>>> = {};
+    for (const path of activationRoutes) {
+      await gotoGame(page, auth, path);
+      activationRouteResults[path] = await readActivationNotice(page, auth);
+    }
+    record("unvalidated account activation warning persists across game routes", {
+      pass: Object.values(activationRouteResults).every((result) => result.pass) && signalsClean(signals),
+      details: { activationRouteResults, signals }
     });
   });
 
@@ -429,6 +464,29 @@ async function gotoGame(page: Page, auth: LoginAuth, path: string, query: Record
   }
   await page.goto(`${migratedBaseURL}${path}?${search.toString()}`, { waitUntil: "networkidle", timeout: 15_000 });
   await page.locator("#content").waitFor({ timeout: 10_000 });
+}
+
+async function readActivationNotice(page: Page, auth: LoginAuth) {
+  const notice = page.locator("#errorbox");
+  await notice.waitFor({ timeout: 10_000 });
+  const text = await notice.innerText();
+  const settingsLink = notice.locator("a", { hasText: "Settings" });
+  const settingsLinks = await settingsLink.count();
+  const href = settingsLinks === 1 ? await settingsLink.getAttribute("href") : "";
+  const url = new URL(href ?? "", migratedBaseURL);
+  const expectedSession = new URLSearchParams(auth.sessionSearch).get("session");
+  return {
+    pass:
+      text.includes("Your game account has not been activated yet.") &&
+      text.includes("receive an activation link to it") &&
+      settingsLinks === 1 &&
+      url.pathname === "/game/options" &&
+      url.searchParams.get("session") === expectedSession,
+    text,
+    settingsLinks,
+    href,
+    pathname: new URL(page.url()).pathname
+  };
 }
 
 function record(name: string, result: { pass: boolean; details: Record<string, unknown> }) {

@@ -16,6 +16,7 @@ export type GameRouteKey =
   | "defense"
   | "alliance"
   | "officers"
+  | "payment"
   | "statistics"
   | "search"
   | "messages"
@@ -53,6 +54,7 @@ export const gameRoutes: GameRoute[] = [
   { key: "defense", label: "Defense", path: "/game/defense", migrated: true },
   { key: "alliance", label: "Alliance", path: "/game/alliance", migrated: true },
   { key: "officers", label: "Officers Recruitment", path: "/game/officers", migrated: true },
+  { key: "payment", label: "Payment", path: "/game/payment", migrated: true },
   { key: "statistics", label: "Statistics", path: "/game/statistics", migrated: true },
   { key: "search", label: "Search", path: "/game/search", migrated: true },
   { key: "messages", label: "Messages", path: "/game/messages", migrated: true },
@@ -108,7 +110,7 @@ const legacyPageAliases = new Map<string, string>([
   ["bewerben", "/game/alliance"],
   ["bewerbungen", "/game/alliance"],
   ["trader", "/game/merchant"],
-  ["payment", "/game/officers"],
+  ["payment", "/game/payment"],
   ["micropayment", "/game/officers"],
   ["statistics", "/game/statistics"],
   ["search", "/game/search"],
