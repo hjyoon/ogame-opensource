@@ -15557,6 +15557,11 @@ function ResourcesTable({
   pending: boolean;
   onSubmit: (production: Record<string, string>) => void;
 }) {
+  const resourcesTableHTML = React.useMemo(
+    () => ({ __html: legacyResourcesTableHTML(resources) }),
+    [resources]
+  );
+
   return (
     <form
       action={gameRouteURL("/game/resources", window.location.search)}
@@ -15575,7 +15580,7 @@ function ResourcesTable({
         Production factor: {formatProductionFactor(resources.factor)}
         <table
           className="legacy-overview-table legacy-resources-table"
-          dangerouslySetInnerHTML={{ __html: legacyResourcesTableHTML(resources) }}
+          dangerouslySetInnerHTML={resourcesTableHTML}
           width={550}
         />
         <br />

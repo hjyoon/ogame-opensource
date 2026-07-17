@@ -40,6 +40,7 @@ type AuthFixture = {
   queue_short?: AuthProfile;
   demolition?: AuthProfile;
   demolition_queue?: AuthProfile;
+  resources?: AuthProfile;
   research_short?: AuthProfile;
   shipyard_short?: AuthProfile;
   features?: Partial<Record<"acs" | "alliance" | "commander" | "phalanx" | "premium" | "report", boolean>>;
@@ -1163,6 +1164,13 @@ async function isApplicable(page: Page, side: SideName, spec: GameDynamicBehavio
 async function performAction(page: Page, side: SideName, action: GameDynamicAction): Promise<void> {
   if (action.type === "wait") {
     await page.waitForTimeout(action.waitMs ?? 100);
+    return;
+  }
+  if (action.type === "evaluate") {
+    await page.evaluate(resolveFixtureTemplate(action.expression ?? "undefined"));
+    if (action.waitMs && action.waitMs > 0) {
+      await page.waitForTimeout(action.waitMs);
+    }
     return;
   }
   const selector = actionSelector(action, side);

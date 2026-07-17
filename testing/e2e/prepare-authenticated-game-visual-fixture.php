@@ -672,6 +672,36 @@ function auth_visual_prepare_demolition_queue_fixture(string $password): array
     );
 }
 
+function auth_visual_prepare_resources_fixture(string $password): array
+{
+    global $db_prefix;
+
+    $user = auth_visual_prepare_user('visualresources', $password, USER_TYPE_PLAYER);
+    $playerId = (int)$user['player_id'];
+    $planetId = (int)$user['home_planet_id'];
+    $now = auth_visual_now();
+
+    dbquery(
+        "UPDATE {$db_prefix}planets SET `" . GID_B_METAL_MINE . "`=10, `" . GID_B_CRYS_MINE . "`=8, " .
+        "`" . GID_B_DEUT_SYNTH . "`=6, `" . GID_B_SOLAR . "`=12, `" . GID_B_FUSION . "`=2, " .
+        "`" . GID_F_SAT . "`=10, prod1=1, prod2=1, prod3=1, prod4=1, prod12=1, prod212=1, " .
+        "`" . GID_RC_METAL . "`=1000000, `" . GID_RC_CRYSTAL . "`=1000000, " .
+        "`" . GID_RC_DEUTERIUM . "`=1000000, fields=38, maxfields=200, lastpeek={$now} " .
+        "WHERE planet_id={$planetId} AND owner_id={$playerId}"
+    );
+    $auth = auth_visual_prepare_session($playerId);
+    SelectPlanet($playerId, $planetId);
+
+    return array(
+        'login_user' => $user['name'],
+        'player_id' => $playerId,
+        'home_planet_id' => $planetId,
+        'session' => $auth['session'],
+        'private_session' => $auth['private_session'],
+        'cookies' => $auth['cookies'],
+    );
+}
+
 function auth_visual_prepare_short_research_fixture(string $password): array
 {
     global $db_prefix;
@@ -1031,6 +1061,7 @@ try {
     $queueShort = auth_visual_prepare_short_queue_fixture($password);
     $demolition = auth_visual_prepare_demolition_fixture($password);
     $demolitionQueue = auth_visual_prepare_demolition_queue_fixture($password);
+    $resources = auth_visual_prepare_resources_fixture($password);
     $researchShort = auth_visual_prepare_short_research_fixture($password);
     $shipyardShort = auth_visual_prepare_short_shipyard_fixture($password);
     $botedit = auth_visual_prepare_botedit_fixture();
@@ -1082,6 +1113,7 @@ try {
         'queue_short' => $queueShort,
         'demolition' => $demolition,
         'demolition_queue' => $demolitionQueue,
+        'resources' => $resources,
         'research_short' => $researchShort,
         'shipyard_short' => $shipyardShort,
         'botedit' => $botedit,

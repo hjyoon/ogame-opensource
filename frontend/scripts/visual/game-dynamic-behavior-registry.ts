@@ -2,10 +2,11 @@ export type SideName = "legacy" | "migrated";
 export type GameFixtureFeature = "acs" | "alliance" | "commander" | "phalanx" | "premium" | "report";
 
 export type GameDynamicAction = {
-  type: "click" | "dblclick" | "fill" | "type" | "select" | "hover" | "press" | "wait" | "popup" | "upload";
+  type: "click" | "dblclick" | "fill" | "type" | "select" | "hover" | "press" | "wait" | "popup" | "upload" | "evaluate";
   selector?: string;
   legacySelector?: string;
   migratedSelector?: string;
+  expression?: string;
   value?: string;
   fileName?: string;
   waitForSelector?: string;
@@ -63,7 +64,7 @@ export type GameDynamicLinkAudit = {
 
 export type GameDynamicBehaviorSpec = {
   name: string;
-  fixtureProfile?: "admin" | "max_fleet" | "no_ships" | "low_fuel" | "no_cargo" | "queue_short" | "demolition" | "demolition_queue" | "research_short" | "shipyard_short";
+  fixtureProfile?: "admin" | "max_fleet" | "no_ships" | "low_fuel" | "no_cargo" | "queue_short" | "demolition" | "demolition_queue" | "resources" | "research_short" | "shipyard_short";
   fixedClock?: boolean;
   legacyPage: string;
   legacyQuery?: Record<string, string>;
@@ -3726,6 +3727,107 @@ export const gameDynamicBehaviorSpecs: GameDynamicBehaviorSpec[] = [
       colorDeltaThreshold: 0
     },
     notes: ["Covers direct and new-tab cancellation URLs for an active demolition queue, including explicit planet selection and exact post-cancel parity."]
+  },
+  {
+    name: "resources-production-draft-stability",
+    fixtureProfile: "resources",
+    legacyPage: "resources",
+    migratedPath: "/game/resources",
+    legacyReady: "#content form#ressourcen",
+    migratedReady: ".legacy-resources-form",
+    actions: [
+      {
+        type: "evaluate",
+        expression:
+          "document.body.dataset.ogameInitialMetal = document.querySelector('#resources tr:nth-child(3) td:first-child font')?.textContent?.trim() ?? ''"
+      },
+      { type: "select", selector: "select[name='last1']", value: "0" },
+      { type: "select", selector: "select[name='last2']", value: "50" },
+      { type: "wait", waitMs: 3500 }
+    ],
+    assertions: [
+      {
+        name: "metal-production-draft",
+        type: "value",
+        selector: "select[name='last1']",
+        compareSides: true,
+        expected: "0"
+      },
+      {
+        name: "crystal-production-draft",
+        type: "value",
+        selector: "select[name='last2']",
+        compareSides: true,
+        expected: "50"
+      },
+      {
+        name: "resource-header-remains-static",
+        type: "evaluate",
+        expression:
+          "document.body.dataset.ogameInitialMetal === (document.querySelector('#resources tr:nth-child(3) td:first-child font')?.textContent?.trim() ?? '')",
+        expected: "true"
+      }
+    ],
+    visual: {
+      enabled: true,
+      normalizePageName: "game-resources",
+      maxDiffRatio: 0,
+      colorDeltaThreshold: 0
+    },
+    notes: ["Covers unsaved production percentages and the static legacy resource header across the migrated overview polling interval."]
+  },
+  {
+    name: "resources-production-recalculate-submit",
+    fixtureProfile: "resources",
+    isolateSides: true,
+    legacyPage: "resources",
+    migratedPath: "/game/resources",
+    legacyReady: "#content form#ressourcen",
+    migratedReady: ".legacy-resources-form",
+    actions: [
+      {
+        type: "evaluate",
+        expression:
+          "document.body.dataset.ogameInitialResourceTable = document.querySelector('.legacy-resources-table, #content form#ressourcen table')?.textContent?.replace(/\\s+/g, ' ').trim() ?? ''"
+      },
+      { type: "select", selector: "select[name='last1']", value: "0" },
+      { type: "select", selector: "select[name='last2']", value: "50" },
+      {
+        type: "click",
+        selector: "input[type='submit'][name='action'][value='Recalculate']",
+        waitMs: 1500
+      }
+    ],
+    assertions: [
+      {
+        name: "submitted-metal-production",
+        type: "value",
+        selector: "select[name='last1']",
+        compareSides: true,
+        expected: "0"
+      },
+      {
+        name: "submitted-crystal-production",
+        type: "value",
+        selector: "select[name='last2']",
+        compareSides: true,
+        expected: "50"
+      },
+      {
+        name: "resource-table-recalculated-after-submit",
+        type: "evaluate",
+        expression:
+          "document.body.dataset.ogameInitialResourceTable !== (document.querySelector('.legacy-resources-table, #content form#ressourcen table')?.textContent?.replace(/\\s+/g, ' ').trim() ?? '')",
+        expected: "true"
+      }
+    ],
+    visual: {
+      enabled: true,
+      normalizePageName: "game-resources",
+      maxDiffRatio: 0,
+      colorDeltaThreshold: 0
+    },
+    notes: ["Covers the explicit Recalculate boundary and persisted production percentages after the server response."]
   },
   {
     name: "technology-light-fighter-rapid-fire-link",

@@ -621,7 +621,13 @@ function App() {
 
   useEffect(() => {
     const publicSession = new URLSearchParams(search).get("session") ?? "";
-    if (!pathname.startsWith("/game") || gameRoute?.key === "logout" || gameRoute?.key === "report" || publicSession === "") {
+    if (
+      !pathname.startsWith("/game") ||
+      gameRoute?.key === "logout" ||
+      gameRoute?.key === "report" ||
+      gameRoute?.key === "resources" ||
+      publicSession === ""
+    ) {
       return;
     }
     const refreshIfDue = () => {
