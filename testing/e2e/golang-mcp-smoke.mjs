@@ -441,7 +441,7 @@ try {
     ? await mcpJSONRPC("tools/call", { name: "report_message", arguments: { messageId: firstReportableMessageID } }, { id: 32, headers: authHeaders })
     : undefined;
   const reportMessageDryRunBody = reportMessageDryRun === undefined ? {} : parseJSON(reportMessageDryRun);
-  const validateFleetDispatchDryRun = await mcpJSONRPC("tools/call", { name: "validate_fleet_dispatch", arguments: { ships: { "202": 1 }, targetGalaxy: 9, targetSystem: 499, targetPosition: 15, targetType: 1, mission: 3, speed: 10 } }, { id: 34, headers: authHeaders });
+  const validateFleetDispatchDryRun = await mcpJSONRPC("tools/call", { name: "validate_fleet_dispatch", arguments: { ships: { "202": 1 }, targetGalaxy: 9, targetSystem: 499, targetPosition: 16, targetType: 1, mission: 15, speed: 10, expeditionHours: 1 } }, { id: 34, headers: authHeaders });
   const validateFleetDispatchDryRunBody = parseJSON(validateFleetDispatchDryRun);
   const dispatchFleetWrongConfirm = await mcpJSONRPC("tools/call", { name: "dispatch_fleet", arguments: { ships: { "202": 1 }, targetGalaxy: 9, targetSystem: 499, targetPosition: 15, targetType: 1, mission: 3, speed: 10, confirm: "wrong" } }, { id: 35, headers: authHeaders });
   const dispatchFleetWrongConfirmBody = parseJSON(dispatchFleetWrongConfirm);
@@ -672,6 +672,15 @@ try {
         result: reportMessageDryRunBody.result ?? {}
       }),
       check(validateFleetDispatchDryRun.status === 200 && Number(validateFleetDispatchDryRunBody.result?.structuredContent?.fleetDispatchValidation?.playerId ?? 0) === login.playerID && validateFleetDispatchDryRunBody.result?.structuredContent?.fleetDispatchValidation?.dryRun === true, "validate_fleet_dispatch returns a dry-run validation result without mutation", validateFleetDispatchDryRunBody.result ?? {}),
+      check(
+        validateFleetDispatchDryRun.status === 200 &&
+          Number(validateFleetDispatchDryRunBody.result?.structuredContent?.fleetDispatchValidation?.mission ?? 0) === 15 &&
+          Number(validateFleetDispatchDryRunBody.result?.structuredContent?.fleetDispatchValidation?.holdHours ?? 0) === 1 &&
+          Number(validateFleetDispatchDryRunBody.result?.structuredContent?.fleetDispatchValidation?.holdSeconds ?? 0) ===
+            Math.max(1, Math.round(3600 / Math.max(1, Number(validateFleetDispatchDryRunBody.result?.structuredContent?.fleetDispatchValidation?.speedFactor ?? 1)))),
+        "validate_fleet_dispatch exposes fleet-speed-scaled expedition hold timing",
+        validateFleetDispatchDryRunBody.result ?? {}
+      ),
       check(dispatchFleetWrongConfirm.status === 200 && dispatchFleetWrongConfirmBody.error?.code === -32602, "dispatch_fleet rejects wrong confirmation before mutation", dispatchFleetWrongConfirmBody),
       check(recallFleetDryRun.status === 200 && Number(recallFleetDryRunBody.result?.structuredContent?.recallFleet?.playerId ?? 0) === login.playerID && recallFleetDryRunBody.result?.structuredContent?.recallFleet?.dryRun === true && recallFleetDryRunBody.result?.structuredContent?.recallFleet?.executed === false && recallFleetDryRunBody.result?.structuredContent?.recallFleet?.requiresConfirmation === false && recallFleetDryRunBody.result?.structuredContent?.recallFleet?.issue?.code === "fleet_not_found", "recall_fleet dry-run is available under fleet_write and does not mutate missing fleet ids", recallFleetDryRunBody.result ?? {}),
       check(phalanxScanDryRun.status === 200 && Number(phalanxScanDryRunBody.result?.structuredContent?.phalanxScan?.playerId ?? 0) === login.playerID && phalanxScanDryRunBody.result?.structuredContent?.phalanxScan?.dryRun === true && phalanxScanDryRunBody.result?.structuredContent?.phalanxScan?.executed === false && phalanxScanDryRunBody.result?.structuredContent?.phalanxScan?.requiresConfirmation === false && typeof phalanxScanDryRunBody.result?.structuredContent?.phalanxScan?.issue?.code === "string", "scan_phalanx dry-run is available under fleet_write and does not mutate when validation fails", phalanxScanDryRunBody.result ?? {}),

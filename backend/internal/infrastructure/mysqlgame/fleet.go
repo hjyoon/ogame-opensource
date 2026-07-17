@@ -802,8 +802,8 @@ func (r FleetRepository) DispatchMCPFleet(ctx context.Context, playerID int, com
 		Origin:      fleet.CurrentPlanet,
 		Draft:       draft,
 		UnionID:     command.UnionID,
-		HoldHours:   domaingame.NormalizeFleetHoldHours(command.Mission, command.HoldHours, command.ExpeditionHours, fleet.ExpeditionLevel),
-		HoldSeconds: domaingame.NormalizeFleetHoldSeconds(command.Mission, command.HoldHours, command.ExpeditionHours, fleet.ExpeditionLevel, draft.SpeedFactor),
+		HoldHours:   result.HoldHours,
+		HoldSeconds: result.HoldSeconds,
 	})
 	if err != nil {
 		return domainmcp.DispatchFleetValidationResult{}, err
@@ -851,6 +851,9 @@ func (r FleetRepository) mcpDispatchFleetValidation(ctx context.Context, playerI
 		Target:          mcpCoordinatesFromGame(draft.Target),
 		TargetType:      draft.TargetType,
 		Speed:           draft.Speed,
+		SpeedFactor:     draft.SpeedFactor,
+		HoldHours:       domaingame.NormalizeFleetHoldHours(command.Mission, command.HoldHours, command.ExpeditionHours, fleet.ExpeditionLevel),
+		HoldSeconds:     domaingame.NormalizeFleetHoldSeconds(command.Mission, command.HoldHours, command.ExpeditionHours, fleet.ExpeditionLevel, draft.SpeedFactor),
 		FuelConsumption: draft.FuelConsumption,
 		Cargo:           draft.Cargo,
 		RemainingCargo:  draft.RemainingCargo,

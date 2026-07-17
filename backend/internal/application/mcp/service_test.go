@@ -3690,6 +3690,9 @@ func TestServiceValidatesFleetDispatchWithConfirmation(t *testing.T) {
 			Mission:         3,
 			Target:          domainmcp.Coordinates{Galaxy: 2, System: 3, Position: 4},
 			TargetType:      1,
+			SpeedFactor:     128,
+			HoldHours:       1,
+			HoldSeconds:     28,
 			FuelConsumption: 12,
 			Cargo:           5000,
 		},
@@ -3720,7 +3723,7 @@ func TestServiceValidatesFleetDispatchWithConfirmation(t *testing.T) {
 		t.Fatalf("validate_fleet_dispatch returned error: %v", err)
 	}
 	preview := result.StructuredContent.(map[string]any)["fleetDispatchValidation"].(domainmcp.DispatchFleetValidationResult)
-	if !preview.DryRun || !preview.Ready || !preview.RequiresConfirmation || !strings.HasPrefix(preview.Confirmation, "dispatch_fleet:") {
+	if !preview.DryRun || !preview.Ready || !preview.RequiresConfirmation || preview.SpeedFactor != 128 || preview.HoldHours != 1 || preview.HoldSeconds != 28 || !strings.HasPrefix(preview.Confirmation, "dispatch_fleet:") {
 		t.Fatalf("unexpected dispatch validation: %+v", preview)
 	}
 	if repository.dispatchPreviewPlayerID != 42 || repository.dispatchPreviewCommand.Ships[202] != 1 || repository.dispatchPreviewCommand.Resources.Metal != 10 {

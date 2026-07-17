@@ -321,6 +321,21 @@ func TestFleetRepositoryDispatchMCPFleetLaunchesReadyDraft(t *testing.T) {
 		t.Fatalf("expected legacy launch writes, exec=%+v", runner.execCalls)
 	}
 
+	previewResults := readPrefix()[2:]
+	previewRepository := NewFleetRepositoryWithQueryer(&fakeQueryer{results: previewResults}, "ogame_", func() time.Time { return now })
+	expeditionCommand := domainmcp.DispatchFleetCommand{
+		Ships:           map[int]int{domaingame.FleetSmallCargo: 1},
+		Target:          domainmcp.Coordinates{Galaxy: 9, System: 499, Position: domaingame.GalaxyFarSpace},
+		TargetType:      domaingame.GamePlanetTypePlanet,
+		Mission:         domaingame.FleetMissionExpedition,
+		Speed:           10,
+		ExpeditionHours: 1,
+	}
+	result, err = previewRepository.PreviewMCPDispatchFleet(context.Background(), 42, expeditionCommand)
+	if err != nil || !result.Ready || result.SpeedFactor != 128 || result.HoldHours != 1 || result.HoldSeconds != 28 {
+		t.Fatalf("expected MCP expedition preview to expose one logical hour and 28 actual seconds, result=%+v err=%v", result, err)
+	}
+
 	runner = &fakeFleetRunner{fakeQueryer: fakeQueryer{results: append(readPrefix(),
 		fakeQueryResult{rows: fakeRowsFromValues([]any{1})},
 	)}}

@@ -1457,6 +1457,9 @@ type DispatchFleetValidationResult struct {
 	Target               Coordinates  `json:"target"`
 	TargetType           int          `json:"targetType"`
 	Speed                int          `json:"speed"`
+	SpeedFactor          int          `json:"speedFactor"`
+	HoldHours            int          `json:"holdHours"`
+	HoldSeconds          int          `json:"holdSeconds"`
 	FuelConsumption      int          `json:"fuelConsumption"`
 	Cargo                int          `json:"cargo"`
 	RemainingCargo       int          `json:"remainingCargo"`
