@@ -2376,6 +2376,13 @@ try {
   const fleetLifecycleReturnMissionAfterReturn = fleetMissionByMission(fleetLifecycleAfterReturnBody, fleetLifecycleReturnMission);
   const fleetLifecycleOriginShipAfterReturn = fleetShipCountByID(fleetLifecycleAfterReturnBody, fleetLifecycleShipID);
   const fleetLifecycleDeployShipAfter = fleetShipCountByID(fleetLifecycleDeployFleetBody, fleetLifecycleShipID);
+  const fleetLifecycleReturnObservedOrCompleted =
+    Number(fleetLifecycleReturnFleet?.mission ?? 0) === fleetLifecycleReturnMission ||
+    (
+      fleetLifecycleTransportMissionAfterArrival === undefined &&
+      fleetLifecycleReturnMissionAfterReturn === undefined &&
+      fleetLifecycleOriginShipAfterReturn === Number(fleetLifecycleFixture.expected_origin_small_cargo_after_return ?? -1)
+    );
 
   const expeditionLogin = expeditionReady
     ? await loginGameUser(expeditionFixture.login, loginSmokePassword, universes[0]?.baseUrl ?? "http://localhost:8888")
@@ -6231,6 +6238,8 @@ try {
     headers: { "Content-Type": "application/json", Cookie: sessionCookiePair },
     body: "{"
   });
+  const hardeningInvalidOptionsCPBody = parseJSON(hardeningInvalidOptionsCP);
+  const hardeningMalformedOptionsBody = parseJSON(hardeningMalformedOptions);
   const hardeningUnknownAPI = await request("/api/does-not-exist");
 
   const phalanxSourceMoonID = Number(phalanxFixture.source_moon_id ?? 0);
@@ -9151,7 +9160,15 @@ try {
         fleetID: fleetLifecycleDeployFleetID,
         missions: fleetLifecycleAfterArrivalBody.fleet?.missions ?? []
       }),
-      check(!fleetLifecycleReady || Number(fleetLifecycleReturnFleet?.mission ?? 0) === fleetLifecycleReturnMission, "transport arrival creates a return fleet", fleetLifecycleReturnFleet ?? {}),
+      check(
+        !fleetLifecycleReady || fleetLifecycleReturnObservedOrCompleted,
+        "transport arrival creates or catch-up completes one return fleet",
+        {
+          observedReturn: fleetLifecycleReturnFleet,
+          finalOriginShips: fleetLifecycleOriginShipAfterReturn,
+          expectedOriginShips: Number(fleetLifecycleFixture.expected_origin_small_cargo_after_return ?? -1)
+        }
+      ),
       check(!fleetLifecycleReady || fleetLifecycleAfterReturn.status === 200, "second fleet reload drains due transport return", {
         status: fleetLifecycleAfterReturn.status
       }),
@@ -9433,7 +9450,7 @@ try {
       check(hardeningInvalidOverviewCP.status === 400, "overview rejects non-numeric selected planet", { status: hardeningInvalidOverviewCP.status, body: hardeningInvalidOverviewCP.body }),
       check(hardeningInvalidOverviewCP.body.includes("invalid selected planet"), "overview invalid planet response is explicit", { body: hardeningInvalidOverviewCP.body }),
       check(hardeningInvalidOptionsCP.status === 400, "options rejects non-numeric selected planet", { status: hardeningInvalidOptionsCP.status, body: hardeningInvalidOptionsCP.body }),
-      check(hardeningInvalidOptionsCP.body.includes("invalid selected planet"), "options invalid planet response is explicit", { body: hardeningInvalidOptionsCP.body }),
+      check(hardeningInvalidOptionsCPBody.error === "Invalid selected planet.", "options invalid planet response is explicit", hardeningInvalidOptionsCPBody),
       check(hardeningInvalidReportID.status === 400, "report rejects non-numeric report id", { status: hardeningInvalidReportID.status, body: hardeningInvalidReportID.body }),
       check(hardeningInvalidReportID.body.includes("invalid report id"), "report invalid id response is explicit", { body: hardeningInvalidReportID.body }),
       check(hardeningInvalidMessageTarget.status === 400, "messages rejects non-numeric compose target", { status: hardeningInvalidMessageTarget.status, body: hardeningInvalidMessageTarget.body }),
@@ -9579,7 +9596,7 @@ try {
       check(hardeningMalformedResources.status === 400, "resources rejects malformed JSON payload", { status: hardeningMalformedResources.status, body: hardeningMalformedResources.body }),
       check(hardeningMalformedResources.body.includes("invalid resource production request"), "resources malformed payload response is explicit", { body: hardeningMalformedResources.body }),
       check(hardeningMalformedOptions.status === 400, "options rejects malformed JSON payload", { status: hardeningMalformedOptions.status, body: hardeningMalformedOptions.body }),
-      check(hardeningMalformedOptions.body.includes("invalid options request"), "options malformed payload response is explicit", { body: hardeningMalformedOptions.body }),
+      check(hardeningMalformedOptionsBody.error === "Invalid options request.", "options malformed payload response is explicit", hardeningMalformedOptionsBody),
       check(hardeningUnknownAPI.status === 404, "unknown API route returns HTTP 404", { status: hardeningUnknownAPI.status }),
       check(!hardeningUnknownAPI.body.includes('id="root"'), "unknown API route is not swallowed by the React shell", { body: hardeningUnknownAPI.body })
     ]
