@@ -967,18 +967,12 @@ func (r OverviewRepository) scanOverviewUser(rows Rows) (overviewUser, error) {
 		&technocratUntil,
 	)
 	if err == nil {
-		now := r.currentTime().Unix()
+		now := r.currentTime()
 		user.Vacation = vacation != 0
 		user.Validated = validated != 0
 		user.DarkMatter = darkMatter + freeDarkMatter
-		user.Engineer = engineerUntil > now
-		user.Officers = domaingame.OverviewOfficers{
-			Commander:  commanderUntil > now,
-			Admiral:    admiralUntil > now,
-			Engineer:   engineerUntil > now,
-			Geologist:  geologistUntil > now,
-			Technocrat: technocratUntil > now,
-		}
+		user.Engineer = engineerUntil > now.Unix()
+		user.Officers = overviewOfficerStatus(now, commanderUntil, admiralUntil, engineerUntil, geologistUntil, technocratUntil)
 		return user, nil
 	}
 	if !scanDestinationCountError(err) {
@@ -1005,17 +999,11 @@ func (r OverviewRepository) scanOverviewUser(rows Rows) (overviewUser, error) {
 		&geologistUntil,
 		&technocratUntil,
 	); err == nil {
-		now := r.currentTime().Unix()
+		now := r.currentTime()
 		user.Vacation = vacation != 0
 		user.DarkMatter = darkMatter + freeDarkMatter
-		user.Engineer = engineerUntil > now
-		user.Officers = domaingame.OverviewOfficers{
-			Commander:  commanderUntil > now,
-			Admiral:    admiralUntil > now,
-			Engineer:   engineerUntil > now,
-			Geologist:  geologistUntil > now,
-			Technocrat: technocratUntil > now,
-		}
+		user.Engineer = engineerUntil > now.Unix()
+		user.Officers = overviewOfficerStatus(now, commanderUntil, admiralUntil, engineerUntil, geologistUntil, technocratUntil)
 		return user, nil
 	} else if !scanDestinationCountError(err) {
 		return overviewUser{}, err
@@ -1039,17 +1027,11 @@ func (r OverviewRepository) scanOverviewUser(rows Rows) (overviewUser, error) {
 		&geologistUntil,
 		&technocratUntil,
 	); err == nil {
-		now := r.currentTime().Unix()
+		now := r.currentTime()
 		user.Vacation = vacation != 0
 		user.DarkMatter = darkMatter + freeDarkMatter
-		user.Engineer = engineerUntil > now
-		user.Officers = domaingame.OverviewOfficers{
-			Commander:  commanderUntil > now,
-			Admiral:    admiralUntil > now,
-			Engineer:   engineerUntil > now,
-			Geologist:  geologistUntil > now,
-			Technocrat: technocratUntil > now,
-		}
+		user.Engineer = engineerUntil > now.Unix()
+		user.Officers = overviewOfficerStatus(now, commanderUntil, admiralUntil, engineerUntil, geologistUntil, technocratUntil)
 		return user, nil
 	} else if !scanDestinationCountError(err) {
 		return overviewUser{}, err
@@ -1078,6 +1060,33 @@ func (r OverviewRepository) scanOverviewUser(rows Rows) (overviewUser, error) {
 		return overviewUser{}, err
 	}
 	return user, nil
+}
+
+func overviewOfficerStatus(
+	now time.Time,
+	commanderUntil int64,
+	admiralUntil int64,
+	engineerUntil int64,
+	geologistUntil int64,
+	technocratUntil int64,
+) domaingame.OverviewOfficers {
+	commanderDays := domaingame.OfficerDaysLeft(commanderUntil, now)
+	admiralDays := domaingame.OfficerDaysLeft(admiralUntil, now)
+	engineerDays := domaingame.OfficerDaysLeft(engineerUntil, now)
+	geologistDays := domaingame.OfficerDaysLeft(geologistUntil, now)
+	technocratDays := domaingame.OfficerDaysLeft(technocratUntil, now)
+	return domaingame.OverviewOfficers{
+		Commander:          commanderDays > 0,
+		CommanderDaysLeft:  commanderDays,
+		Admiral:            admiralDays > 0,
+		AdmiralDaysLeft:    admiralDays,
+		Engineer:           engineerDays > 0,
+		EngineerDaysLeft:   engineerDays,
+		Geologist:          geologistDays > 0,
+		GeologistDaysLeft:  geologistDays,
+		Technocrat:         technocratDays > 0,
+		TechnocratDaysLeft: technocratDays,
+	}
 }
 
 func overviewFleetDetailLevel(user overviewUser) int {

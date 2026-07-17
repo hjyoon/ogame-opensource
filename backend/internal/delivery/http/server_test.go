@@ -989,9 +989,21 @@ func TestGameOverviewEndpointReturnsOverview(t *testing.T) {
 	overview := &fakeGameOverview{result: appgame.OverviewResult{
 		Authenticated: true,
 		Overview: domaingame.Overview{
-			Commander:      "legor",
-			Validated:      true,
-			ServerTime:     "Fri Jun 19 18:23:07",
+			Commander:  "legor",
+			Validated:  true,
+			ServerTime: "Fri Jun 19 18:23:07",
+			Officers: domaingame.OverviewOfficers{
+				Commander:          true,
+				CommanderDaysLeft:  30,
+				Admiral:            false,
+				AdmiralDaysLeft:    0,
+				Engineer:           true,
+				EngineerDaysLeft:   7,
+				Geologist:          false,
+				GeologistDaysLeft:  0,
+				Technocrat:         true,
+				TechnocratDaysLeft: 90,
+			},
 			Messages:       []string{domaingame.OverviewAdminNotice},
 			UnreadMessages: 4,
 			News: &domaingame.OverviewNews{
@@ -1114,6 +1126,13 @@ func TestGameOverviewEndpointReturnsOverview(t *testing.T) {
 	}
 	if response.Overview.UnreadMessages != 4 {
 		t.Fatalf("expected unread messages to be mapped, got %d", response.Overview.UnreadMessages)
+	}
+	if !response.Overview.Officers.Commander ||
+		response.Overview.Officers.CommanderDaysLeft != 30 ||
+		response.Overview.Officers.Admiral ||
+		response.Overview.Officers.EngineerDaysLeft != 7 ||
+		response.Overview.Officers.TechnocratDaysLeft != 90 {
+		t.Fatalf("expected overview officer hover status to be mapped, got %+v", response.Overview.Officers)
 	}
 	if response.Overview.News == nil ||
 		response.Overview.News.URL != "https://board.example.test/news" ||

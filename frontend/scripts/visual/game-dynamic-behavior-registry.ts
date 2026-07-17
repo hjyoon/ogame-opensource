@@ -17,6 +17,7 @@ export type GameDynamicAction = {
   dispatchClick?: boolean;
   legacyDispatchClick?: boolean;
   migratedDispatchClick?: boolean;
+  hoverWithoutScroll?: boolean;
   waitMs?: number;
 };
 
@@ -150,7 +151,81 @@ const officerPurchaseVisualSpecs: GameDynamicBehaviorSpec[] = officerPurchaseTar
   notes: [`Covers buying the ${officer.name} for 7 days, including exact post-purchase visual parity.`]
 }));
 
+const officerHeaderHoverTargets = [
+  { key: "commander", legacyImage: "commander_ikon", migratedImage: "commander", action: "Renew!" },
+  { key: "admiral", legacyImage: "admiral_ikon", migratedImage: "admiral", action: "Order now!" },
+  { key: "engineer", legacyImage: "ingenieur_ikon", migratedImage: "ingenieur", action: "Order now!" },
+  { key: "geologist", legacyImage: "geologe_ikon", migratedImage: "geologe", action: "Order now!" },
+  { key: "technocrat", legacyImage: "technokrat_ikon", migratedImage: "technokrat", action: "Order now!" }
+] as const;
+
+const officerHeaderHoverSpecs: GameDynamicBehaviorSpec[] = officerHeaderHoverTargets.map((officer) => ({
+  name: `overview-officer-${officer.key}-hover`,
+  legacyPage: "overview",
+  migratedPath: "/game/overview",
+  legacyReady: `#header_top img[src*='${officer.legacyImage}']`,
+  migratedReady: `.legacy-officer-table img[data-officer-key='${officer.migratedImage}']`,
+  requiredFixtureFeatures: ["commander"],
+  actions: [
+    {
+      type: "hover",
+      legacySelector: `#header_top img[src*='${officer.legacyImage}']`,
+      migratedSelector: `.legacy-officer-table img[data-officer-key='${officer.migratedImage}']`,
+      hoverWithoutScroll: true,
+      waitForSelector: "#overDiv"
+    }
+  ],
+  assertions: [
+    { name: "tooltip-visible", type: "visible", selector: "#overDiv", expected: "true" },
+    { name: "tooltip-text", type: "text", selector: "#overDiv", compareSides: true, contains: officer.action },
+    { name: "tooltip-link-count", type: "count", selector: "#overDiv a[href]", expected: "1" },
+    {
+      name: "tooltip-width",
+      type: "evaluate",
+      expression: "Math.round(document.querySelector('#overDiv')?.getBoundingClientRect().width ?? 0)",
+      compareSides: true,
+      expected: "150"
+    },
+    {
+      name: "tooltip-left-of-pointer",
+      type: "evaluate",
+      expression:
+        "(() => { const icon = document.querySelector(\"#header_top img[src*='" +
+        officer.legacyImage +
+        "'], .legacy-officer-table img[data-officer-key='" +
+        officer.migratedImage +
+        "']\"); const tip = document.querySelector('#overDiv'); if (!icon || !tip) return false; return tip.getBoundingClientRect().right <= icon.getBoundingClientRect().right; })()",
+      expected: "true"
+    },
+    {
+      name: "tooltip-officer-route",
+      type: "evaluate",
+      expression:
+        "(() => { const href = document.querySelector('#overDiv a[href]')?.getAttribute('href'); if (!href) return false; const url = new URL(href, window.location.href); return url.pathname === '/game/officers' || (url.pathname.endsWith('/game/index.php') && url.searchParams.get('page') === 'micropayment'); })()",
+      expected: "true"
+    }
+  ],
+  visual: {
+    enabled: true,
+    keepTooltips: true,
+    normalizePageName: `game-overview-officer-${officer.key}-hover`,
+    maskSelectors: [".legacy-overview-main-table tr:has(.legacy-overview-event-timer)", "#content tr:has([id^='bxx'])"]
+  },
+  linkAudit: {
+    expected: [
+      {
+        name: `${officer.key}-officer-page-target`,
+        target: "/game/officers",
+        scope: "after",
+        classification: "visual"
+      }
+    ]
+  },
+  notes: [`Covers the ${officer.key} header icon overLib content, placement, action link, and exact visual parity.`]
+}));
+
 export const gameDynamicBehaviorSpecs: GameDynamicBehaviorSpec[] = [
+  ...officerHeaderHoverSpecs,
   ...officerPurchaseVisualSpecs,
   {
     name: "officers-dark-matter-payment-navigation",

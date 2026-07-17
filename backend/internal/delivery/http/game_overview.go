@@ -39,11 +39,16 @@ type gameOverviewSummary struct {
 }
 
 type gameOverviewOfficers struct {
-	Commander  bool `json:"commander"`
-	Admiral    bool `json:"admiral"`
-	Engineer   bool `json:"engineer"`
-	Geologist  bool `json:"geologist"`
-	Technocrat bool `json:"technocrat"`
+	Commander          bool `json:"commander"`
+	CommanderDaysLeft  int  `json:"commanderDaysLeft"`
+	Admiral            bool `json:"admiral"`
+	AdmiralDaysLeft    int  `json:"admiralDaysLeft"`
+	Engineer           bool `json:"engineer"`
+	EngineerDaysLeft   int  `json:"engineerDaysLeft"`
+	Geologist          bool `json:"geologist"`
+	GeologistDaysLeft  int  `json:"geologistDaysLeft"`
+	Technocrat         bool `json:"technocrat"`
+	TechnocratDaysLeft int  `json:"technocratDaysLeft"`
 }
 
 type gameOverviewNewsResponse struct {
@@ -277,11 +282,16 @@ func toGameOverviewSummary(overview domaingame.Overview) gameOverviewSummary {
 		Validated:  overview.Validated,
 		ServerTime: overview.ServerTime,
 		Officers: gameOverviewOfficers{
-			Commander:  overview.Officers.Commander,
-			Admiral:    overview.Officers.Admiral,
-			Engineer:   overview.Officers.Engineer,
-			Geologist:  overview.Officers.Geologist,
-			Technocrat: overview.Officers.Technocrat,
+			Commander:          overview.Officers.Commander,
+			CommanderDaysLeft:  overview.Officers.CommanderDaysLeft,
+			Admiral:            overview.Officers.Admiral,
+			AdmiralDaysLeft:    overview.Officers.AdmiralDaysLeft,
+			Engineer:           overview.Officers.Engineer,
+			EngineerDaysLeft:   overview.Officers.EngineerDaysLeft,
+			Geologist:          overview.Officers.Geologist,
+			GeologistDaysLeft:  overview.Officers.GeologistDaysLeft,
+			Technocrat:         overview.Officers.Technocrat,
+			TechnocratDaysLeft: overview.Officers.TechnocratDaysLeft,
 		},
 		Score: gameScoreResponse{
 			Points:          overview.Score.DisplayPoints(),

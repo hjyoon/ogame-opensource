@@ -6,7 +6,7 @@ Tracks legacy PHP/JS dynamic behavior. Exact screenshots prove pixels; masked re
 
 | Area | Legacy source | Go+Bun status | Evidence | Gap |
 | --- | --- | --- | --- | --- |
-| Game shell navigation/popups | `game/core/page.php` `showGalaxy`, `fenster`, planet selector, officer hovers | Registered parity | relative routes, report/phalanx pages, shell visuals, popup sizing/body checks | expand on discovery |
+| Game shell navigation/popups | `game/core/page.php` `showGalaxy`, `fenster`, planet selector, officer hovers | Registered parity | relative routes, report/phalanx pages, popup checks, five officer hover exact diffs | expand on discovery |
 | Queue/countdown/event hovers | `overview.php`, `event_list.php`, `b_building.php`, `phalanx_events.php` | Registered parity | overview visual, tooltips, queue completion, phalanx countdown | expand on discovery |
 | Galaxy hover/actions | `galaxy.php`, `galaxy_js.php` menus, `doit`, cursor keys | Registered parity | hover/action links, keyboard, instant success/failures | expand on discovery |
 | Fleet selection/targeting | `flotten1/2/3.php` max links, `shortInfo`, remaining resources | Registered parity | controls, mission selection, cargo, attack/ACS/expedition | expand on discovery |
@@ -25,11 +25,12 @@ placement, and selected admin tables. Masked pixels need DOM/text assertions.
 ## Behavior Runner
 
 `run-playwright-authenticated-game-dynamic-e2e.sh` enables commander/alliance/
-report/phalanx/ACS fixtures by default and runs 98 cases: counters, galaxy
+report/phalanx/ACS fixtures by default and runs 106 cases: counters, galaxy
 action/hover links/keyboard, fleet controls/launch errors, merchant clamps/
 tooltips/submit, statistics/empire tooltips, overview event overLib, queue
-countdowns, popup sizing/body, admin filters/search/Bans/Uni/Planets/Expedition/BattleSim debug/result/BotEdit,
-and empire double-click enqueue routing.
+countdowns, all five header officer tooltips, popup sizing/body, admin filters/
+search/Bans/Uni/Planets/Expedition/BattleSim debug/result/BotEdit, and empire
+double-click enqueue routing.
 `run-playwright-public-registration-dynamic-e2e.sh` separately compares public
 register focus help, username polling, direct error URLs, and submit errors.
 `run-playwright-public-login-dynamic-e2e.sh` compares invalid-login feedback and
@@ -46,6 +47,6 @@ Route-changing dynamic links are tracked separately here:
 2. Add isolated cases when unsupported legacy-only mutating JS is found.
 3. Run both legacy PHP and Go+Bun where possible.
 
-Conclusion: all 98 registered authenticated cases pass in both browsers. This
+Conclusion: all 106 registered authenticated cases pass in both browsers. This
 proves the registered inventory, not every theoretical JS state; discoveries
 must expand the inventory before parity is reasserted.

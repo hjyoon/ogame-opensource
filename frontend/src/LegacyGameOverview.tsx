@@ -1,4 +1,5 @@
 import React from "react";
+import { createPortal } from "react-dom";
 import {
   gameBuddyRequestURL,
   gameFleetTargetPrefillFromSearch,
@@ -499,10 +500,15 @@ type GameOverview = {
   serverTime?: string;
   officers?: {
     commander: boolean;
+    commanderDaysLeft: number;
     admiral: boolean;
+    admiralDaysLeft: number;
     engineer: boolean;
+    engineerDaysLeft: number;
     geologist: boolean;
+    geologistDaysLeft: number;
     technocrat: boolean;
+    technocratDaysLeft: number;
   };
   news?: GameOverviewNews;
   menuLinks?: GameOverviewMenuLinks;
@@ -2124,14 +2130,16 @@ function useLegacyTextCounterCompatibility() {
   }, []);
 }
 
+type LegacyOverlibWindow = Window &
+  Record<"ABOVE" | "BGCOLOR" | "CAPTION" | "CENTER" | "DELAY" | "FGCOLOR" | "LEFT" | "MOUSEOFF" | "OFFSETX" | "OFFSETY" | "RIGHT" | "STICKY" | "WIDTH", string> & {
+    __ogameOverlibMouse?: { x: number; y: number };
+    nd?: () => true;
+    overlib?: (html: string, ...args: unknown[]) => true;
+  };
+
 function useLegacyOverlibCompatibility() {
   React.useEffect(() => {
-    type OverlibWindow = Window &
-      Record<"ABOVE" | "BGCOLOR" | "CAPTION" | "CENTER" | "DELAY" | "FGCOLOR" | "LEFT" | "MOUSEOFF" | "OFFSETX" | "OFFSETY" | "RIGHT" | "STICKY" | "WIDTH", string> & {
-        nd?: () => true;
-        overlib?: (html: string, ...args: unknown[]) => true;
-      };
-    const overlibWindow = window as unknown as OverlibWindow;
+    const overlibWindow = window as unknown as LegacyOverlibWindow;
     const constants = [
       "ABOVE",
       "BGCOLOR",
@@ -2150,7 +2158,8 @@ function useLegacyOverlibCompatibility() {
     let mouse = { x: 0, y: 0 };
 
     const onMouseMove = (event: MouseEvent) => {
-      mouse = { x: event.clientX, y: event.clientY };
+      mouse = { x: event.pageX, y: event.pageY };
+      overlibWindow.__ogameOverlibMouse = mouse;
     };
     const hide = () => {
       const target = document.getElementById("overDiv");
@@ -2179,10 +2188,12 @@ function useLegacyOverlibCompatibility() {
       }
       const width = Math.max(1, numericArgAfter(args, "WIDTH", 200));
       const offsetX = numericArgAfter(args, "OFFSETX", 10);
-      const offsetY = numericArgAfter(args, "OFFSETY", 12);
+      const offsetY = numericArgAfter(args, "OFFSETY", 10);
+      const left = args.includes("LEFT");
+      const pointer = overlibWindow.__ogameOverlibMouse ?? mouse;
       target.innerHTML = legacyOverlibHTML(html, width, false);
-      target.style.left = `${Math.max(0, mouse.x + offsetX)}px`;
-      target.style.top = `${Math.max(0, mouse.y + offsetY)}px`;
+      target.style.left = `${Math.max(0, left ? pointer.x - offsetX - width : pointer.x + offsetX)}px`;
+      target.style.top = `${Math.max(0, pointer.y + offsetY)}px`;
       target.style.visibility = "visible";
       return true;
     };
@@ -2193,6 +2204,7 @@ function useLegacyOverlibCompatibility() {
       hide();
       delete overlibWindow.nd;
       delete overlibWindow.overlib;
+      delete overlibWindow.__ogameOverlibMouse;
       for (const constant of constants) {
         delete overlibWindow[constant];
       }
@@ -2884,7 +2896,10 @@ export function LegacyGameOverview({
         ) : null}
         {overview && route.key === "mcpGuide" ? <MCPGuidePage /> : null}
       </section>
-      <div id="overDiv" style={{ left: -10000, position: "absolute", top: -10000, visibility: "hidden", zIndex: 1000 }} />
+      {createPortal(
+        <div id="overDiv" style={{ left: -10000, position: "absolute", top: -10000, visibility: "hidden", zIndex: 1000 }} />,
+        document.body
+      )}
     </main>
   );
 }
@@ -2998,11 +3013,40 @@ function LegacyResourceHeader({ overview }: { overview: GameOverview }) {
     }
   ];
   const officers = [
-    { active: overview.officers?.commander ?? false, alt: "Commander", image: "commander" },
-    { active: overview.officers?.admiral ?? false, alt: "Admiral", image: "admiral" },
-    { active: overview.officers?.engineer ?? false, alt: "Engineer", image: "ingenieur" },
-    { active: overview.officers?.geologist ?? false, alt: "Geologist", image: "geologe" },
-    { active: overview.officers?.technocrat ?? false, alt: "Technocrat", image: "technokrat" }
+    {
+      active: overview.officers?.commander ?? false,
+      alt: "Commander",
+      daysLeft: overview.officers?.commanderDaysLeft ?? 0,
+      image: "commander"
+    },
+    {
+      active: overview.officers?.admiral ?? false,
+      alt: "Fleet Admiral",
+      daysLeft: overview.officers?.admiralDaysLeft ?? 0,
+      image: "admiral",
+      info: "&nbsp;max. fleet slots +2"
+    },
+    {
+      active: overview.officers?.engineer ?? false,
+      alt: "Engineer",
+      daysLeft: overview.officers?.engineerDaysLeft ?? 0,
+      image: "ingenieur",
+      info: "Reduces the losses of the defense by half<br> +10% more energy"
+    },
+    {
+      active: overview.officers?.geologist ?? false,
+      alt: "Geologist",
+      daysLeft: overview.officers?.geologistDaysLeft ?? 0,
+      image: "geologe",
+      info: "+10% mine production"
+    },
+    {
+      active: overview.officers?.technocrat ?? false,
+      alt: "Technocrat",
+      daysLeft: overview.officers?.technocratDaysLeft ?? 0,
+      image: "technokrat",
+      info: "+2 espionage level for probes, 25% less research time"
+    }
   ];
   const selectedPlanetHref = planetHref(planet.id);
 
@@ -3087,7 +3131,10 @@ function LegacyResourceHeader({ overview }: { overview: GameOverview }) {
                       <a accessKey="i" href={gameMenuRouteURL("/game/officers", window.location.search)}>
                         <img
                           alt={officer.alt}
+                          data-officer-key={officer.image}
                           height={32}
+                          onMouseOut={hideLegacyOfficerTooltip}
+                          onMouseOver={(event) => showLegacyOfficerTooltip(officer, event)}
                           src={`${gameImageBase}/${officer.image}_ikon${officer.active ? "" : "_un"}.gif`}
                           width={32}
                         />
@@ -3103,6 +3150,34 @@ function LegacyResourceHeader({ overview }: { overview: GameOverview }) {
       </tbody>
     </table>
   );
+}
+
+function showLegacyOfficerTooltip(
+  officer: {
+    active: boolean;
+    alt: string;
+    daysLeft: number;
+    info?: string;
+  },
+  event: React.MouseEvent<HTMLImageElement>
+) {
+  const overlibWindow = window as unknown as LegacyOverlibWindow;
+  overlibWindow.__ogameOverlibMouse = { x: event.pageX, y: event.pageY };
+  const days = officer.active
+    ? `Still <font color=lime>active</font> for more than ${officer.daysLeft} days`
+    : "";
+  const action = officer.active ? "Renew!" : "Order now!";
+  const href = gameMenuRouteURL("/game/officers", window.location.search);
+  let html = `<center><font size=1 color=white><b>${days}<br>${legacyHTMLText(officer.alt)}</font><br>`;
+  if (officer.info) {
+    html += `<font size=1 color=skyblue>${officer.info}</font><br>`;
+  }
+  html += `<br><a href="${legacyHTMLAttribute(href)}"><font size=1 color=lime>${action}</b></font></a></center>`;
+  return overlibWindow.overlib?.(html, overlibWindow.LEFT, overlibWindow.WIDTH, 150) ?? true;
+}
+
+function hideLegacyOfficerTooltip() {
+  return (window as unknown as LegacyOverlibWindow).nd?.() ?? true;
 }
 
 function LegacyLeftMenu({

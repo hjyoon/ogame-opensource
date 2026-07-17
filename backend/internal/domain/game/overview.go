@@ -36,11 +36,16 @@ type Overview struct {
 }
 
 type OverviewOfficers struct {
-	Commander  bool
-	Admiral    bool
-	Engineer   bool
-	Geologist  bool
-	Technocrat bool
+	Commander          bool
+	CommanderDaysLeft  int
+	Admiral            bool
+	AdmiralDaysLeft    int
+	Engineer           bool
+	EngineerDaysLeft   int
+	Geologist          bool
+	GeologistDaysLeft  int
+	Technocrat         bool
+	TechnocratDaysLeft int
 }
 
 type OverviewNews struct {

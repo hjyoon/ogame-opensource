@@ -546,6 +546,13 @@ func TestOverviewRepositoryReadsUniverseNewsAndOfficerState(t *testing.T) {
 	if !overview.Officers.Commander || !overview.Officers.Admiral || !overview.Officers.Engineer || !overview.Officers.Geologist || !overview.Officers.Technocrat {
 		t.Fatalf("expected active officer state from full user row, got %+v", overview.Officers)
 	}
+	if overview.Officers.CommanderDaysLeft != 1 ||
+		overview.Officers.AdmiralDaysLeft != 1 ||
+		overview.Officers.EngineerDaysLeft != 1 ||
+		overview.Officers.GeologistDaysLeft != 1 ||
+		overview.Officers.TechnocratDaysLeft != 1 {
+		t.Fatalf("expected legacy ceiling-based officer days, got %+v", overview.Officers)
+	}
 	if overview.Validated || len(overview.Errors) != 3 ||
 		overview.Errors[0] != domaingame.OverviewActivationNotice ||
 		overview.Errors[1] != domaingame.OverviewVacationNotice ||

@@ -1052,6 +1052,18 @@ function isRouteLink(link: RouteLink | null): link is RouteLink {
 }
 
 async function applyDeterministicSnapshotState(page: Page, spec: GameDynamicBehaviorSpec, side: SideName): Promise<void> {
+  const tooltipState =
+    spec.visual?.keepTooltips === true
+      ? await page.locator("#overDiv").evaluate((element) => ({
+          html: element.innerHTML,
+          style: element.getAttribute("style") ?? ""
+        }))
+      : null;
+  if (tooltipState) {
+    await page.evaluate(() => {
+      (window as Window & { nd?: () => true }).nd = () => true;
+    });
+  }
   if (spec.visual?.keepTooltips !== true) {
     await page.mouse.move(1, 1);
   }
@@ -1072,7 +1084,7 @@ async function applyDeterministicSnapshotState(page: Page, spec: GameDynamicBeha
     side,
     {
       name: pageName,
-      area: "core",
+      area: spec.visual?.keepTooltips === true ? "hover" : "core",
       legacyPage: spec.legacyPage,
       migratedPath: spec.migratedPath,
       legacyReady: spec.legacyReady,
@@ -1085,6 +1097,16 @@ async function applyDeterministicSnapshotState(page: Page, spec: GameDynamicBeha
       ...maskSelectors
     ]
   );
+  if (tooltipState) {
+    await page.waitForTimeout(0);
+    await page.locator("#overDiv").evaluate((element, state) => {
+      element.innerHTML = state.html;
+      element.setAttribute("style", state.style);
+      if (element instanceof HTMLElement) {
+        element.style.visibility = "visible";
+      }
+    }, tooltipState);
+  }
 }
 
 async function compareVisualAfterActions(
@@ -1207,7 +1229,19 @@ async function performAction(page: Page, side: SideName, action: GameDynamicActi
       buffer: Buffer.from(resolveFixtureValue(action.value ?? ""), "utf8")
     });
   } else if (action.type === "hover") {
-    await locator.hover({ timeout: 5_000 });
+    if (action.hoverWithoutScroll) {
+      const box = await locator.boundingBox();
+      const viewport = page.viewportSize();
+      if (!box || !viewport) {
+        throw new Error("hover target has no visible bounding box");
+      }
+      await page.mouse.move(
+        Math.max(0, Math.min(viewport.width - 1, box.x + box.width / 2)),
+        Math.max(0, Math.min(viewport.height - 1, box.y + box.height / 2))
+      );
+    } else {
+      await locator.hover({ timeout: 5_000 });
+    }
   } else {
     await locator.press(resolveFixtureValue(action.value ?? "Tab"), { timeout: 5_000 });
   }
