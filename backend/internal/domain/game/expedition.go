@@ -458,12 +458,12 @@ func expeditionPoints(fleet FleetCounts, settings ExpeditionSettings, topScore i
 			total += int(cost.Metal+cost.Crystal) * count
 		}
 	}
-	points := total / 1000
+	points := total / ScoreDisplayScale
 	if minimum {
 		points = max(200, points)
 	}
 	limit := settings.PointLimitMax
-	score := int(topScore / 1000)
+	score := int(topScore / ScoreDisplayScale)
 	for index, cap := range settings.ScoreCaps {
 		if score < cap {
 			limit = settings.PointLimits[index]

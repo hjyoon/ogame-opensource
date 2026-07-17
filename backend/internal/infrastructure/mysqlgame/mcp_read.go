@@ -831,7 +831,7 @@ func displayMCPScore(score int64) int64 {
 	if score < 0 {
 		return 0
 	}
-	return score / 1000
+	return score / domaingame.ScoreDisplayScale
 }
 
 func mcpPlanetTypeName(planetType int) string {

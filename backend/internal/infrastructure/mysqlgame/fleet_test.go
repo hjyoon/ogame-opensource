@@ -183,6 +183,51 @@ func TestFleetRepositoryPreviewsMCPDispatchFleet(t *testing.T) {
 	}
 }
 
+func TestFleetRepositoryMCPPreviewAppliesNewbieProtection(t *testing.T) {
+	now := time.Unix(1_000, 0)
+	command := domainmcp.DispatchFleetCommand{
+		Ships:      map[int]int{domaingame.FleetSmallCargo: 1},
+		Target:     domainmcp.Coordinates{Galaxy: 2, System: 3, Position: 4},
+		TargetType: domaingame.GamePlanetTypePlanet,
+		Mission:    domaingame.FleetMissionAttack,
+		Speed:      10,
+	}
+	preview := func(originScore int64, targetScore int64) (domainmcp.DispatchFleetValidationResult, *fakeFleetRunner, error) {
+		runner := &fakeFleetRunner{fakeQueryer: fakeQueryer{results: append(fleetReadPrefixResults(now),
+			fakeQueryResult{rows: fakeRowsFromValues()},
+			fakeQueryResult{rows: fakeRowsFromValues()},
+			fakeQueryResult{rows: fakeRowsFromValues([]any{100, 43, domaingame.PlanetTypePlanet})},
+			fakeQueryResult{rows: fakeRowsFromValues(fleetLaunchUserStateRow(42, originScore, 0, 0, 0, 0, now.Unix()))},
+			fakeQueryResult{rows: fakeRowsFromValues(fleetLaunchUserStateRow(43, targetScore, 0, 0, 0, 0, now.Unix()))},
+		)}}
+		repository := NewFleetRepositoryWithRunner(runner, runner, "ogame_", func() time.Time { return now })
+		result, err := repository.PreviewMCPDispatchFleet(context.Background(), 42, command)
+		return result, runner, err
+	}
+
+	result, runner, err := preview(8_478_729, 293_590)
+	if err != nil {
+		t.Fatalf("PreviewMCPDispatchFleet returned error: %v", err)
+	}
+	if result.Ready || result.Issue == nil || result.Issue.Code != domaingame.FleetIssueTargetNoob {
+		t.Fatalf("MCP preview must reject the same protected target as final dispatch: %+v", result)
+	}
+	if len(runner.execCalls) != 0 {
+		t.Fatalf("MCP preview must remain read-only: %+v", runner.execCalls)
+	}
+
+	result, runner, err = preview(293_590, 293_590)
+	if err != nil {
+		t.Fatalf("equal-score PreviewMCPDispatchFleet returned error: %v", err)
+	}
+	if !result.Ready || result.Issue != nil {
+		t.Fatalf("MCP preview must allow equal 293-point players: %+v", result)
+	}
+	if len(runner.execCalls) != 0 {
+		t.Fatalf("equal-score MCP preview must remain read-only: %+v", runner.execCalls)
+	}
+}
+
 func TestFleetRepositoryPreviewMCPDispatchFleetEdges(t *testing.T) {
 	command := domainmcp.DispatchFleetCommand{
 		Ships:      map[int]int{domaingame.FleetSmallCargo: 1},
@@ -1277,6 +1322,10 @@ func TestFleetRepositoryLaunchRejectsInvalidLegacySpecialTargets(t *testing.T) {
 func TestFleetRepositoryLaunchRejectsMissionShipRequirementsBeforeWrites(t *testing.T) {
 	now := time.Unix(1_000, 0)
 	baseQuery := func(mission int, ships []domaingame.FleetShipCount) appgame.FleetLaunchQuery {
+		targetType := domaingame.GamePlanetTypePlanet
+		if mission == domaingame.FleetMissionDestroy {
+			targetType = domaingame.GamePlanetTypeMoon
+		}
 		return appgame.FleetLaunchQuery{
 			PlayerID: 42,
 			PlanetID: 99,
@@ -1285,7 +1334,7 @@ func TestFleetRepositoryLaunchRejectsMissionShipRequirementsBeforeWrites(t *test
 				Ready:      true,
 				Mission:    mission,
 				Target:     domaingame.Coordinates{Galaxy: 2, System: 3, Position: 4},
-				TargetType: domaingame.GamePlanetTypePlanet,
+				TargetType: targetType,
 			},
 		}
 	}
@@ -1552,15 +1601,22 @@ func TestFleetRepositoryLaunchRejectsLegacyTargetProtectionBeforeWrites(t *testi
 		{
 			name:   "newbie target blocks attack dispatch",
 			query:  baseQuery(domaingame.FleetMissionAttack, []domaingame.FleetShipCount{{ID: domaingame.FleetSmallCargo, Count: 1}}),
-			origin: fleetLaunchUserStateRow(42, 100_000, 0, 0, 0, 0, now.Unix()),
-			target: fleetLaunchUserStateRow(43, 1_000, 0, 0, 0, 0, now.Unix()),
+			origin: fleetLaunchUserStateRow(42, 8_478_729, 0, 0, 0, 0, now.Unix()),
+			target: fleetLaunchUserStateRow(43, 293_590, 0, 0, 0, 0, now.Unix()),
 			code:   domaingame.FleetIssueTargetNoob,
 		},
 		{
 			name:   "strong target blocks attack dispatch",
 			query:  baseQuery(domaingame.FleetMissionAttack, []domaingame.FleetShipCount{{ID: domaingame.FleetSmallCargo, Count: 1}}),
-			origin: fleetLaunchUserStateRow(42, 1_000, 0, 0, 0, 0, now.Unix()),
-			target: fleetLaunchUserStateRow(43, 100_000, 0, 0, 0, 0, now.Unix()),
+			origin: fleetLaunchUserStateRow(42, 293_590, 0, 0, 0, 0, now.Unix()),
+			target: fleetLaunchUserStateRow(43, 8_478_729, 0, 0, 0, 0, now.Unix()),
+			code:   domaingame.FleetIssueTargetNoob,
+		},
+		{
+			name:   "newbie target blocks moon destruction",
+			query:  baseQuery(domaingame.FleetMissionDestroy, []domaingame.FleetShipCount{{ID: domaingame.FleetDeathstar, Count: 1}}),
+			origin: fleetLaunchUserStateRow(42, 8_478_729, 0, 0, 0, 0, now.Unix()),
+			target: fleetLaunchUserStateRow(43, 293_590, 0, 0, 0, 0, now.Unix()),
 			code:   domaingame.FleetIssueTargetNoob,
 		},
 		{
@@ -1574,9 +1630,13 @@ func TestFleetRepositoryLaunchRejectsLegacyTargetProtectionBeforeWrites(t *testi
 
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
+			targetType := domaingame.PlanetTypePlanet
+			if tt.query.Draft.Mission == domaingame.FleetMissionDestroy {
+				targetType = domaingame.PlanetTypeMoon
+			}
 			runner := &fakeFleetRunner{fakeQueryer: fakeQueryer{results: []fakeQueryResult{
 				{rows: fakeRowsFromValues([]any{0})},
-				{rows: fakeRowsFromValues([]any{100, 43, domaingame.PlanetTypePlanet})},
+				{rows: fakeRowsFromValues([]any{100, 43, targetType})},
 				{rows: fakeRowsFromValues(tt.origin)},
 				{rows: fakeRowsFromValues(tt.target)},
 			}}}
@@ -1800,8 +1860,8 @@ func TestFleetRepositoryACSHoldRelationHandlesEdges(t *testing.T) {
 
 func TestFleetLaunchProtectionHelpersCoverLegacyBranches(t *testing.T) {
 	now := time.Unix(1_000, 0)
-	origin := fleetLaunchUserState{ID: 42, Score: 10_000, LastClick: now.Unix()}
-	target := fleetLaunchUserState{ID: 43, Score: 10_000, LastClick: now.Unix()}
+	origin := fleetLaunchUserState{ID: 42, Score: 10_000_000, LastClick: now.Unix()}
+	target := fleetLaunchUserState{ID: 43, Score: 10_000_000, LastClick: now.Unix()}
 
 	if !fleetLaunchNeedsUserState(domaingame.FleetMissionTransport, 43) {
 		t.Fatal("transport to a player target should load user state for vacation guards")
@@ -1810,6 +1870,21 @@ func TestFleetLaunchProtectionHelpersCoverLegacyBranches(t *testing.T) {
 		fleetLaunchNeedsUserState(domaingame.FleetMissionExpedition, userSpace) ||
 		fleetLaunchNeedsUserState(999, 43) {
 		t.Fatal("recycle, space, and unknown missions should not load player target state")
+	}
+	for _, mission := range []int{
+		domaingame.FleetMissionAttack,
+		domaingame.FleetMissionACSAttack,
+		domaingame.FleetMissionACSAttackHead,
+		domaingame.FleetMissionACSHold,
+		domaingame.FleetMissionSpy,
+		domaingame.FleetMissionDestroy,
+	} {
+		if !fleetLaunchChecksNewbieProtection(mission) {
+			t.Fatalf("mission %d must receive MCP newbie-protection validation", mission)
+		}
+	}
+	if fleetLaunchChecksNewbieProtection(domaingame.FleetMissionTransport) {
+		t.Fatal("transport must not receive hostile newbie-protection validation")
 	}
 
 	tests := []struct {
@@ -1836,8 +1911,29 @@ func TestFleetLaunchProtectionHelpersCoverLegacyBranches(t *testing.T) {
 		{
 			name:    "acs hold noob",
 			mission: domaingame.FleetMissionACSHold,
-			origin:  fleetLaunchUserState{ID: 42, Score: 100_000, LastClick: now.Unix()},
-			target:  fleetLaunchUserState{ID: 43, Score: 1_000, LastClick: now.Unix()},
+			origin:  fleetLaunchUserState{ID: 42, Score: 8_478_729, LastClick: now.Unix()},
+			target:  fleetLaunchUserState{ID: 43, Score: 293_590, LastClick: now.Unix()},
+			code:    domaingame.FleetIssueTargetNoob,
+		},
+		{
+			name:    "acs attack noob",
+			mission: domaingame.FleetMissionACSAttack,
+			origin:  fleetLaunchUserState{ID: 42, Score: 8_478_729, LastClick: now.Unix()},
+			target:  fleetLaunchUserState{ID: 43, Score: 293_590, LastClick: now.Unix()},
+			code:    domaingame.FleetIssueTargetNoob,
+		},
+		{
+			name:    "spy noob",
+			mission: domaingame.FleetMissionSpy,
+			origin:  fleetLaunchUserState{ID: 42, Score: 8_478_729, LastClick: now.Unix()},
+			target:  fleetLaunchUserState{ID: 43, Score: 293_590, LastClick: now.Unix()},
+			code:    domaingame.FleetIssueTargetNoob,
+		},
+		{
+			name:    "destroy noob",
+			mission: domaingame.FleetMissionDestroy,
+			origin:  fleetLaunchUserState{ID: 42, Score: 8_478_729, LastClick: now.Unix()},
+			target:  fleetLaunchUserState{ID: 43, Score: 293_590, LastClick: now.Unix()},
 			code:    domaingame.FleetIssueTargetNoob,
 		},
 		{
@@ -1850,7 +1946,7 @@ func TestFleetLaunchProtectionHelpersCoverLegacyBranches(t *testing.T) {
 		{
 			name:    "destroy attack ban",
 			mission: domaingame.FleetMissionDestroy,
-			origin:  fleetLaunchUserState{ID: 42, Score: 10_000, NoAttack: true, LastClick: now.Unix()},
+			origin:  fleetLaunchUserState{ID: 42, Score: 10_000_000, NoAttack: true, LastClick: now.Unix()},
 			target:  target,
 			code:    domaingame.FleetIssueAttackBan,
 		},
@@ -1859,6 +1955,12 @@ func TestFleetLaunchProtectionHelpersCoverLegacyBranches(t *testing.T) {
 			mission: domaingame.FleetMissionTransport,
 			origin:  origin,
 			target:  target,
+		},
+		{
+			name:    "equal 293 point attack",
+			mission: domaingame.FleetMissionAttack,
+			origin:  fleetLaunchUserState{ID: 42, Score: 293_590, LastClick: now.Unix()},
+			target:  fleetLaunchUserState{ID: 43, Score: 293_590, LastClick: now.Unix()},
 		},
 	}
 	for _, tt := range tests {

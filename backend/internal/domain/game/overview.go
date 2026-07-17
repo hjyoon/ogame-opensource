@@ -117,7 +117,7 @@ func (s ScoreSummary) DisplayPoints() int64 {
 	if s.RawScore < 0 {
 		return 0
 	}
-	return s.RawScore / 1000
+	return s.RawScore / ScoreDisplayScale
 }
 
 func OverviewUnreadMessageText(count int) string {

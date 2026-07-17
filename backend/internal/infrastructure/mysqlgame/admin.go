@@ -1506,7 +1506,8 @@ func (r AdminRepository) loadAdminBroadcastRecipients(ctx context.Context, users
 	args := []any{}
 	switch category {
 	case 1:
-		query += " WHERE score1 < ?"
+		query += " WHERE admin = ? AND score1 < ?"
+		args = append(args, domaingame.AdminLevelPlayer)
 		args = append(args, domaingame.GalaxyNoobScoreLimit)
 	case 2:
 		query += " WHERE place1 < ?"

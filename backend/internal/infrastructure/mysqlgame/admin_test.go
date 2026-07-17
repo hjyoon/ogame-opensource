@@ -2515,11 +2515,11 @@ func TestAdminRepositoryAdminOperationEdges(t *testing.T) {
 		for _, tt := range []struct {
 			category int
 			wantSQL  string
-			wantArg  any
+			wantArgs []any
 		}{
-			{category: 0, wantSQL: "SELECT player_id FROM `ogame_users`", wantArg: nil},
-			{category: 1, wantSQL: "score1 < ?", wantArg: domaingame.GalaxyNoobScoreLimit},
-			{category: 2, wantSQL: "place1 < ?", wantArg: 100},
+			{category: 0, wantSQL: "SELECT player_id FROM `ogame_users`"},
+			{category: 1, wantSQL: "admin = ? AND score1 < ?", wantArgs: []any{domaingame.AdminLevelPlayer, domaingame.GalaxyNoobScoreLimit}},
+			{category: 2, wantSQL: "place1 < ?", wantArgs: []any{100}},
 		} {
 			runner := &fakeGalaxyRunner{fakeQueryer: fakeQueryer{results: []fakeQueryResult{
 				{rows: fakeRowsFromValues([]any{"Admin", 1, 2, 3})},
@@ -2541,12 +2541,8 @@ func TestAdminRepositoryAdminOperationEdges(t *testing.T) {
 			if !strings.Contains(call.sql, tt.wantSQL) {
 				t.Fatalf("category %d query %q does not contain %q", tt.category, call.sql, tt.wantSQL)
 			}
-			if tt.wantArg == nil {
-				if len(call.args) != 0 {
-					t.Fatalf("category %d should not pass args, got %+v", tt.category, call.args)
-				}
-			} else if len(call.args) != 1 || call.args[0] != tt.wantArg {
-				t.Fatalf("category %d args=%+v want %v", tt.category, call.args, tt.wantArg)
+			if fmt.Sprint(call.args) != fmt.Sprint(tt.wantArgs) {
+				t.Fatalf("category %d args=%+v want %+v", tt.category, call.args, tt.wantArgs)
 			}
 		}
 	})

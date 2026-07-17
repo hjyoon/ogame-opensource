@@ -477,10 +477,11 @@ function IsPlayerNewbie ( int $player_id) : bool
     if ($user == null) return false;
     $week = time() - 604800;
     if ( $user['lastclick'] <= $week || $user['vacation'] || $user['banned']) return false;
+    if ( intval($GlobalUser['admin'] ?? USER_TYPE_PLAYER) > USER_TYPE_PLAYER || intval($user['admin'] ?? USER_TYPE_PLAYER) > USER_TYPE_PLAYER ) return false;
     $p1 = $GlobalUser['score1'];
     $p2 = $user['score1'];
 
-    if ($p2 >= $p1 || $p2 >= USER_NOOB_LIMIT) return false;
+    if ($p2 >= $p1 || $p2 >= USER_NOOB_SCORE_LIMIT) return false;
     if ($p1 <= $p2*5) return false;
     return true;
 }
@@ -493,10 +494,11 @@ function IsPlayerStrong ( int $player_id) : bool
     if ($user == null) return false;
     $week = time() - 604800;
     if ( $user['lastclick'] <= $week || $user['vacation'] || $user['banned']) return false;
+    if ( intval($GlobalUser['admin'] ?? USER_TYPE_PLAYER) > USER_TYPE_PLAYER || intval($user['admin'] ?? USER_TYPE_PLAYER) > USER_TYPE_PLAYER ) return false;
     $p1 = $GlobalUser['score1'];
     $p2 = $user['score1'];
 
-    if ($p1 >= $p2 || $p1 >= USER_NOOB_LIMIT) return false;
+    if ($p1 >= $p2 || $p1 >= USER_NOOB_SCORE_LIMIT) return false;
     if ($p2 <= $p1*5) return false;
     return true;
 }

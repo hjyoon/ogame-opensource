@@ -87,7 +87,7 @@ func (r StatisticsRow) DisplayScore(statType string) int64 {
 		return 0
 	}
 	if NormalizeStatisticsType(statType) == StatisticsTypeResources {
-		return r.Score / 1000
+		return r.Score / ScoreDisplayScale
 	}
 	return r.Score
 }

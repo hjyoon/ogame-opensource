@@ -358,13 +358,13 @@ try {
     e2e_cleanup_runtime(array($attackerId, $defenderId), array($attackerPlanet, $defenderPlanet));
     $coords = e2e_find_open_pair();
 
-    $pair = e2e_prepare_pair($attackerId, $attackerPlanet, $defenderId, $defenderPlanet, $coords, 10000, 10000);
+    $pair = e2e_prepare_pair($attackerId, $attackerPlanet, $defenderId, $defenderPlanet, $coords, 293590, 293590);
     $auth = e2e_prepare_session($attackerId, 'target-allowed');
     $cookies = $auth['cookies'];
     $response = e2e_direct_fleet_request($gameBase, $auth['session'], $attackerPlanet, $cookies, $pair['origin'], $pair['target'], FTYP_ATTACK, array(GID_F_LF => 1));
     $fleet = e2e_one_row("SELECT fleet_id, mission, start_planet, target_planet, `" . GID_F_LF . "` AS light_fighters FROM {$db_prefix}fleet WHERE owner_id={$attackerId} ORDER BY fleet_id DESC LIMIT 1");
     $cases[] = e2e_finalize_case(array(
-        'case' => 'direct_attack_allowed_when_scores_are_comparable',
+        'case' => 'direct_attack_allowed_at_equal_293_points',
         'checks' => array_merge(e2e_response_check($response, 'allowed direct attack'), array(
             e2e_case(stripos($response['body'], 'Fleet dispatched') !== false, 'allowed attack renders the dispatch success page', array('body_excerpt' => substr(trim(preg_replace('/\s+/', ' ', strip_tags($response['body']))), 0, 1000))),
             e2e_case($fleet !== null && (int)$fleet['mission'] === FTYP_ATTACK && (int)$fleet['target_planet'] === $defenderPlanet && (int)$fleet['light_fighters'] === 1, 'allowed attack creates an attack fleet row', $fleet ?? array()),
@@ -374,28 +374,37 @@ try {
 
     $restrictionCases = array(
         'direct_attack_rejects_newbie_target' => array(
-            'attacker_score' => 100000,
-            'defender_score' => 1000,
+            'attacker_score' => 8478729,
+            'defender_score' => 293590,
             'order' => FTYP_ATTACK,
             'ships' => array(GID_F_LF => 1),
             'expected_text' => 'protected for newbies',
             'message' => 'newbie protected target blocks direct attack',
         ),
         'direct_attack_rejects_strong_target' => array(
-            'attacker_score' => 1000,
-            'defender_score' => 100000,
+            'attacker_score' => 293590,
+            'defender_score' => 8478729,
             'order' => FTYP_ATTACK,
             'ships' => array(GID_F_LF => 1),
             'expected_text' => 'protected for newbies',
             'message' => 'strong target blocks direct attack from a weak player',
         ),
         'direct_spy_rejects_newbie_target' => array(
-            'attacker_score' => 100000,
-            'defender_score' => 1000,
+            'attacker_score' => 8478729,
+            'defender_score' => 293590,
             'order' => FTYP_SPY,
             'ships' => array(GID_F_PROBE => 1),
             'expected_text' => 'newbie protection',
             'message' => 'newbie protected target blocks direct espionage',
+        ),
+        'direct_destroy_rejects_newbie_target' => array(
+            'attacker_score' => 8478729,
+            'defender_score' => 293590,
+            'order' => FTYP_DESTROY,
+            'ships' => array(GID_F_DEATHSTAR => 1),
+            'target_type' => PTYP_MOON,
+            'expected_text' => 'protected for newbies',
+            'message' => 'newbie protected moon blocks destruction',
         ),
         'direct_attack_rejects_vacation_target' => array(
             'attacker_score' => 10000,
@@ -438,6 +447,12 @@ try {
             $spec['attacker_options'] ?? array(),
             $spec['defender_options'] ?? array()
         );
+        if (($spec['target_type'] ?? PTYP_PLANET) === PTYP_MOON) {
+            dbquery("UPDATE {$db_prefix}planets SET type=" . PTYP_MOON . " WHERE planet_id={$defenderPlanet}");
+            dbquery("UPDATE {$db_prefix}planets SET `" . GID_F_DEATHSTAR . "`=1 WHERE planet_id={$attackerPlanet}");
+            $pair['origin'] = LoadPlanetById($attackerPlanet);
+            $pair['target'] = LoadPlanetById($defenderPlanet);
+        }
         $auth = e2e_prepare_session($attackerId, $caseName);
         $cookies = $auth['cookies'];
         $before = e2e_fleet_row_count($attackerId);
@@ -456,13 +471,13 @@ try {
 
     $ajaxCases = array(
         'ajax_spy_rejects_newbie_target' => array(
-            'attacker_score' => 100000,
-            'defender_score' => 1000,
+            'attacker_score' => 8478729,
+            'defender_score' => 293590,
             'expected_code' => '603',
         ),
         'ajax_spy_rejects_strong_target' => array(
-            'attacker_score' => 1000,
-            'defender_score' => 100000,
+            'attacker_score' => 293590,
+            'defender_score' => 8478729,
             'expected_code' => '604',
         ),
         'ajax_spy_rejects_vacation_target' => array(
@@ -507,8 +522,8 @@ try {
 
     $ipmCases = array(
         'ipm_rejects_newbie_target' => array(
-            'attacker_score' => 100000,
-            'defender_score' => 1000,
+            'attacker_score' => 8478729,
+            'defender_score' => 293590,
             'expected_text' => 'noob protection',
         ),
         'ipm_rejects_vacation_target' => array(

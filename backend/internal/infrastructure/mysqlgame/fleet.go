@@ -449,6 +449,20 @@ func fleetLaunchNeedsUserState(mission int, ownerID int) bool {
 	}
 }
 
+func fleetLaunchChecksNewbieProtection(mission int) bool {
+	switch mission {
+	case domaingame.FleetMissionAttack,
+		domaingame.FleetMissionACSAttack,
+		domaingame.FleetMissionACSAttackHead,
+		domaingame.FleetMissionACSHold,
+		domaingame.FleetMissionSpy,
+		domaingame.FleetMissionDestroy:
+		return true
+	default:
+		return false
+	}
+}
+
 func validateFleetLaunchProtection(mission int, origin fleetLaunchUserState, target fleetLaunchUserState, now int64) *domaingame.FleetActionIssue {
 	if origin.Vacation {
 		return domaingame.FleetActionIssueFor(domaingame.FleetIssueVacationSelf)
@@ -486,6 +500,9 @@ func validateFleetLaunchProtection(mission int, origin fleetLaunchUserState, tar
 		if fleetLaunchAdminProtected(target) {
 			return domaingame.FleetActionIssueFor(domaingame.FleetIssueTargetAdmin)
 		}
+		if fleetLaunchNoobProtected(origin, target, now) {
+			return domaingame.FleetActionIssueFor(domaingame.FleetIssueTargetNoob)
+		}
 		if origin.NoAttack {
 			return domaingame.FleetActionIssueFor(domaingame.FleetIssueAttackBan)
 		}
@@ -498,9 +515,23 @@ func fleetLaunchAdminProtected(target fleetLaunchUserState) bool {
 }
 
 func fleetLaunchNoobProtected(origin fleetLaunchUserState, target fleetLaunchUserState, now int64) bool {
-	active := target.LastClick > now-604800 && !target.Vacation && !target.Banned
-	return (active && target.Score < origin.Score && target.Score < domaingame.GalaxyNoobScoreLimit && origin.Score > target.Score*5) ||
-		(active && origin.Score < target.Score && origin.Score < domaingame.GalaxyNoobScoreLimit && target.Score > origin.Score*5)
+	return domaingame.PlayerNewbieProtectionApplies(
+		domaingame.NewbieProtectionPlayer{
+			Score:     origin.Score,
+			Admin:     origin.Admin,
+			LastClick: origin.LastClick,
+			Vacation:  origin.Vacation,
+			Banned:    origin.Banned,
+		},
+		domaingame.NewbieProtectionPlayer{
+			Score:     target.Score,
+			Admin:     target.Admin,
+			LastClick: target.LastClick,
+			Vacation:  target.Vacation,
+			Banned:    target.Banned,
+		},
+		now,
+	)
 }
 
 func fleetLaunchTargetIsPlanetOrMoon(targetType int) bool {
@@ -822,7 +853,40 @@ func (r FleetRepository) mcpDispatchFleetValidation(ctx context.Context, playerI
 		Distance:        draft.Distance,
 		Issue:           mcpFleetActionIssue(issue),
 	}
+	if result.Ready && fleetLaunchChecksNewbieProtection(draft.Mission) {
+		protectionIssue, err := r.validateMCPFleetLaunchProtection(ctx, playerID, draft)
+		if err != nil {
+			return domaingame.Fleet{}, domaingame.FleetDispatchDraft{}, domainmcp.DispatchFleetValidationResult{}, err
+		}
+		if protectionIssue != nil {
+			result.Ready = false
+			result.Issue = mcpFleetActionIssue(protectionIssue)
+		}
+	}
 	return fleet, draft, result, nil
+}
+
+func (r FleetRepository) validateMCPFleetLaunchProtection(ctx context.Context, playerID int, draft domaingame.FleetDispatchDraft) (*domaingame.FleetActionIssue, error) {
+	planetsTable, err := tableName(r.prefix, "planets")
+	if err != nil {
+		return nil, err
+	}
+	usersTable, err := tableName(r.prefix, "users")
+	if err != nil {
+		return nil, err
+	}
+	query := appgame.FleetLaunchQuery{PlayerID: playerID, Draft: draft}
+	target, found, err := r.loadFleetLaunchTarget(ctx, planetsTable, draft.Target, draft.TargetType)
+	if err != nil {
+		return nil, err
+	}
+	if !found {
+		return domaingame.FleetActionIssueFor(domaingame.FleetIssueInvalidTarget), nil
+	}
+	if issue := validateFleetLaunchTarget(query, target); issue != nil {
+		return issue, nil
+	}
+	return r.validateFleetLaunchUserState(ctx, usersTable, query, target, r.now().Unix())
 }
 
 func (r FleetRepository) PreviewMCPRecallFleet(ctx context.Context, playerID int, command domainmcp.RecallFleetCommand) (domainmcp.RecallFleetResult, error) {

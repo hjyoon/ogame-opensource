@@ -24,7 +24,9 @@ const (
 	GalaxyActionBuddy    = 0x4
 	GalaxyActionMissile  = 0x8
 	GalaxyActionReport   = 0x10
-	GalaxyNoobScoreLimit = 5000
+	ScoreDisplayScale    = 1000
+	GalaxyNoobPointLimit = 5000
+	GalaxyNoobScoreLimit = GalaxyNoobPointLimit * ScoreDisplayScale
 
 	GalaxyIssueRocketNoTarget      = "rocket_no_target"
 	GalaxyIssueRocketNoRockets     = "rocket_no_rockets"
@@ -115,6 +117,14 @@ type GalaxyObjectPlayer struct {
 	Vacation  bool
 	Banned    bool
 	Admin     int
+}
+
+type NewbieProtectionPlayer struct {
+	Score     int64
+	Admin     int
+	LastClick int64
+	Vacation  bool
+	Banned    bool
 }
 
 type GalaxyAlliance struct {
@@ -460,9 +470,28 @@ func galaxyPlayerStatus(owner GalaxyObjectPlayer, viewer GalaxyViewer, now int64
 }
 
 func GalaxyPlayerProtectedFromMissiles(owner GalaxyObjectPlayer, viewer GalaxyViewer, now int64) bool {
-	activeForNoobCheck := owner.LastClick > now-604800 && !owner.Vacation && !owner.Banned
-	return (activeForNoobCheck && owner.Score < viewer.Score && owner.Score < GalaxyNoobScoreLimit && viewer.Score > owner.Score*5) ||
-		(activeForNoobCheck && viewer.Score < owner.Score && viewer.Score < GalaxyNoobScoreLimit && owner.Score > viewer.Score*5)
+	return PlayerNewbieProtectionApplies(
+		NewbieProtectionPlayer{Score: viewer.Score, Admin: viewer.Admin},
+		NewbieProtectionPlayer{
+			Score:     owner.Score,
+			Admin:     owner.Admin,
+			LastClick: owner.LastClick,
+			Vacation:  owner.Vacation,
+			Banned:    owner.Banned,
+		},
+		now,
+	)
+}
+
+func PlayerNewbieProtectionApplies(origin NewbieProtectionPlayer, target NewbieProtectionPlayer, now int64) bool {
+	if origin.Admin > AdminLevelPlayer || target.Admin > AdminLevelPlayer {
+		return false
+	}
+	if target.LastClick <= now-604800 || target.Vacation || target.Banned {
+		return false
+	}
+	return (target.Score < origin.Score && target.Score < GalaxyNoobScoreLimit && origin.Score > target.Score*5) ||
+		(origin.Score < target.Score && origin.Score < GalaxyNoobScoreLimit && target.Score > origin.Score*5)
 }
 
 func GalaxyMissileTargetAllowed(id int) bool {

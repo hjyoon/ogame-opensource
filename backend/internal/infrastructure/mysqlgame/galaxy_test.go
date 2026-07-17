@@ -504,8 +504,8 @@ func TestGalaxyRepositoryLaunchMissileValidationIssues(t *testing.T) {
 		{
 			name:       "noob protected target",
 			amount:     1,
-			targetRows: fakeRowsFromValues(galaxyMissileTargetRow(77, 7, 1, 4, 5, int64(1000), 0, 0, 0, now.Unix())),
-			originRow:  galaxyMissileOriginRow(99, 42, 1, 2, 3, 5, int64(100000), 0, 0, 0, now.Unix(), 2),
+			targetRows: fakeRowsFromValues(galaxyMissileTargetRow(77, 7, 1, 4, 5, int64(293_590), 0, 0, 0, now.Unix())),
+			originRow:  galaxyMissileOriginRow(99, 42, 1, 2, 3, 5, int64(8_478_729), 0, 0, 0, now.Unix(), 2),
 			want:       domaingame.GalaxyIssueRocketNoob,
 		},
 	}

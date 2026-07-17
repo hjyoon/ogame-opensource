@@ -129,7 +129,8 @@ const USER_FLAG_DEFAULT = USER_FLAG_SHOW_ESPIONAGE_BUTTON | USER_FLAG_SHOW_WRITE
 const USER_LEGOR = 1;
 const USER_SPACE = 99999;           // A technical account that owns global events as well as "nobody's" galaxy objects
 
-const USER_NOOB_LIMIT = 5000;           // Number of points for a newbie
+const USER_NOOB_LIMIT = 5000;           // Displayed points for a newbie
+const USER_NOOB_SCORE_LIMIT = USER_NOOB_LIMIT * 1000; // Internal score units
 
 // for TechDuration method ($const_factor)
 const PROD_BUILDING_DURATION_FACTOR = 2500;

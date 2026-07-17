@@ -280,6 +280,7 @@ switch ( $order )
              IsBuddy ( $origin_user['player_id'],  $target_user['player_id']) ) ) $BlockAttack = 0;
 
         if ( $target != NULL && FleetAdminTargetProtected ($target_user) ) FleetError ( loca("FLEET_ERR_ADMIN") );
+        else if ( IsPlayerNewbie ($target['owner_id']) || IsPlayerStrong ($target['owner_id']) ) FleetError ( loca("FLEET_ERR_NOOB") );
         else if ( $fleet[GID_F_DEATHSTAR] == 0 ) FleetError ( loca("FLEET_ERR_DESTROY_REQUIRED") );
         else if ($target['type'] != PTYP_MOON ) FleetError ( loca("FLEET_ERR_DESTROY_MOON") );
         else if ($BlockAttack) FleetError ( loca("FLEET_ERR_ATTACK_BAN_UNI") );

@@ -325,19 +325,57 @@ func TestGalaxyMissileHelpersCoverLegacyEdgeCases(t *testing.T) {
 	if issue := GalaxyMissileLaunchedIssue(0); issue.Code != GalaxyIssueRocketNoRockets {
 		t.Fatalf("unexpected zero launch issue: %+v", issue)
 	}
+	if GalaxyNoobPointLimit != 5000 || GalaxyNoobScoreLimit != 5_000_000 {
+		t.Fatalf("newbie threshold must use 5,000 displayed points, got points=%d raw=%d", GalaxyNoobPointLimit, GalaxyNoobScoreLimit)
+	}
 	if !GalaxyPlayerProtectedFromMissiles(
-		GalaxyObjectPlayer{Score: 1000, LastClick: 1000},
-		GalaxyViewer{Score: 100000},
+		GalaxyObjectPlayer{Score: 293_590, LastClick: 1000},
+		GalaxyViewer{Score: 8_478_729},
 		1000,
 	) {
-		t.Fatal("expected active low-score target to be protected")
+		t.Fatal("expected the reported 293-versus-8,478 point case to be protected")
 	}
 	if GalaxyPlayerProtectedFromMissiles(
-		GalaxyObjectPlayer{Score: 1000, LastClick: 1000, Vacation: true},
-		GalaxyViewer{Score: 100000},
+		GalaxyObjectPlayer{Score: 293_590, LastClick: 1000, Vacation: true},
+		GalaxyViewer{Score: 8_478_729},
 		1000,
 	) {
 		t.Fatal("vacation target should not use noob protection calculation")
+	}
+	if !GalaxyPlayerProtectedFromMissiles(
+		GalaxyObjectPlayer{Score: 4_999_999, LastClick: 1000},
+		GalaxyViewer{Score: 30_000_000},
+		1000,
+	) {
+		t.Fatal("score immediately below 5,000 displayed points should be protected")
+	}
+	if GalaxyPlayerProtectedFromMissiles(
+		GalaxyObjectPlayer{Score: 5_000_000, LastClick: 1000},
+		GalaxyViewer{Score: 30_000_001},
+		1000,
+	) {
+		t.Fatal("score at 5,000 displayed points should be outside newbie protection")
+	}
+	if GalaxyPlayerProtectedFromMissiles(
+		GalaxyObjectPlayer{Score: 1_000_000, LastClick: 1000},
+		GalaxyViewer{Score: 5_000_000},
+		1000,
+	) {
+		t.Fatal("an exact five-to-one score ratio should remain attackable")
+	}
+	if GalaxyPlayerProtectedFromMissiles(
+		GalaxyObjectPlayer{Score: 293_590, LastClick: 1000},
+		GalaxyViewer{Score: 293_590},
+		1000,
+	) {
+		t.Fatal("players with the same 293-point score should be able to attack each other")
+	}
+	admin := GalaxyObjectPlayer{ID: 1, Score: -1, LastClick: 1000, Admin: AdminLevelAdmin}
+	if GalaxyPlayerProtectedFromMissiles(admin, GalaxyViewer{Score: 8_478_729}, 1000) {
+		t.Fatal("administrator accounts must not be classified by newbie protection")
+	}
+	if status := galaxyPlayerStatus(admin, GalaxyViewer{Score: 8_478_729}, 1000, false); status.Status == "noob" || status.Status == "strong" {
+		t.Fatalf("administrator galaxy status must not show a score protection marker: %+v", status)
 	}
 }
 

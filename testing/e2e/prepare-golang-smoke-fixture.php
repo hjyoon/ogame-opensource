@@ -737,11 +737,11 @@ function smoke_prepare_fleet_restriction_fixture(string $password, array $near):
     $positions = smoke_find_empty_positions($near, count($users));
 
     $specs = array(
-        array('key' => 'attacker', 'user' => $attacker, 'score' => 100000, 'options' => array()),
-        array('key' => 'weak_attacker', 'user' => $weak, 'score' => 1000, 'options' => array()),
+        array('key' => 'attacker', 'user' => $attacker, 'score' => 8478729, 'options' => array()),
+        array('key' => 'weak_attacker', 'user' => $weak, 'score' => 293590, 'options' => array()),
         array('key' => 'blocked_attacker', 'user' => $blocked, 'score' => 10000, 'options' => array('noattack' => 1)),
-        array('key' => 'noob', 'user' => $noob, 'score' => 1000, 'options' => array()),
-        array('key' => 'strong', 'user' => $strong, 'score' => 100000, 'options' => array()),
+        array('key' => 'noob', 'user' => $noob, 'score' => 293590, 'options' => array()),
+        array('key' => 'strong', 'user' => $strong, 'score' => 8478729, 'options' => array()),
         array('key' => 'vacation', 'user' => $vacation, 'score' => 10000, 'options' => array('vacation' => 1)),
         array('key' => 'operator', 'user' => $operator, 'score' => 10000, 'options' => array('admin' => USER_TYPE_GO)),
         array('key' => 'comparable', 'user' => $comparable, 'score' => 10000, 'options' => array()),

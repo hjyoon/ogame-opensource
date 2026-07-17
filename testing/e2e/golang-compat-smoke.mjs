@@ -2737,6 +2737,101 @@ try {
     1,
     { [String(fleetRestrictionSmallCargo)]: 1 }
   );
+  const fleetRestrictionWeakAfterBlocked = fleetRestrictionsReady
+    ? await request(`/api/game/fleet${fleetRestrictionWeakSearch}`, {
+        headers: { Cookie: fleetRestrictionWeakLogin?.cookiePair ?? "" }
+      })
+    : null;
+  async function createFleetRestrictionMCPToken(login, label) {
+    if (!fleetRestrictionsReady || login === null) {
+      return { response: { status: 0 }, body: {}, id: 0, secret: "" };
+    }
+    const prefix = "go-newbie-protection-";
+    const existing = await request(`/api/game/mcp-tokens${login.search}`, {
+      headers: { Cookie: login.cookiePair }
+    });
+    const existingBody = parseJSON(existing);
+    for (const token of existingBody.tokens ?? []) {
+      if (String(token.name ?? "").startsWith(prefix)) {
+        await request(`/api/game/mcp-tokens/revoke${login.search}`, {
+          method: "POST",
+          headers: { Cookie: login.cookiePair, "Content-Type": "application/json" },
+          body: JSON.stringify({ tokenId: Number(token.id ?? 0) })
+        });
+      }
+    }
+    const response = await request(`/api/game/mcp-tokens${login.search}`, {
+      method: "POST",
+      headers: { Cookie: login.cookiePair, "Content-Type": "application/json" },
+      body: JSON.stringify({
+        name: `${prefix}${label}`,
+        scopes: ["mcp:fleet_write"],
+        expiresInSeconds: 3600
+      })
+    });
+    const body = parseJSON(response);
+    return {
+      response,
+      body,
+      id: Number(body.token?.id ?? 0),
+      secret: String(body.secret ?? "")
+    };
+  }
+  const fleetRestrictionAttackerMCPToken = await createFleetRestrictionMCPToken(fleetRestrictionAttackerLogin, "attacker");
+  const fleetRestrictionWeakMCPToken = await createFleetRestrictionMCPToken(fleetRestrictionWeakLogin, "equal");
+  const fleetRestrictionMCPArguments = (actor, target) => ({
+    planetId: Number(actor.home_planet_id),
+    ships: { [String(fleetRestrictionSmallCargo)]: 1 },
+    targetGalaxy: Number(target.coordinates.galaxy),
+    targetSystem: Number(target.coordinates.system),
+    targetPosition: Number(target.coordinates.position),
+    targetType: 1,
+    mission: 1,
+    speed: 10
+  });
+  const fleetRestrictionProtectedMCP = fleetRestrictionsReady && fleetRestrictionAttackerMCPToken.secret !== ""
+    ? await mcpJSONRPC("tools/call", {
+        name: "validate_fleet_dispatch",
+        arguments: fleetRestrictionMCPArguments(fleetRestrictionsFixture.attacker, fleetRestrictionsFixture.noob)
+      }, {
+        id: 901,
+        headers: { Authorization: `Bearer ${fleetRestrictionAttackerMCPToken.secret}` }
+      })
+    : { status: 0, body: "", headers: {} };
+  const fleetRestrictionEqualMCP = fleetRestrictionsReady && fleetRestrictionWeakMCPToken.secret !== ""
+    ? await mcpJSONRPC("tools/call", {
+        name: "validate_fleet_dispatch",
+        arguments: fleetRestrictionMCPArguments(fleetRestrictionsFixture.weak_attacker, fleetRestrictionsFixture.noob)
+      }, {
+        id: 902,
+        headers: { Authorization: `Bearer ${fleetRestrictionWeakMCPToken.secret}` }
+      })
+    : { status: 0, body: "", headers: {} };
+  const fleetRestrictionProtectedMCPBody = parseJSON(fleetRestrictionProtectedMCP);
+  const fleetRestrictionEqualMCPBody = parseJSON(fleetRestrictionEqualMCP);
+  const fleetRestrictionProtectedMCPResult = fleetRestrictionProtectedMCPBody.result?.structuredContent?.fleetDispatchValidation ?? {};
+  const fleetRestrictionEqualMCPResult = fleetRestrictionEqualMCPBody.result?.structuredContent?.fleetDispatchValidation ?? {};
+  async function revokeFleetRestrictionMCPToken(login, tokenID) {
+    if (login === null || tokenID <= 0) {
+      return { status: 0, body: "", headers: {} };
+    }
+    return request(`/api/game/mcp-tokens/revoke${login.search}`, {
+      method: "POST",
+      headers: { Cookie: login.cookiePair, "Content-Type": "application/json" },
+      body: JSON.stringify({ tokenId: tokenID })
+    });
+  }
+  const fleetRestrictionAttackerMCPRevoke = await revokeFleetRestrictionMCPToken(fleetRestrictionAttackerLogin, fleetRestrictionAttackerMCPToken.id);
+  const fleetRestrictionWeakMCPRevoke = await revokeFleetRestrictionMCPToken(fleetRestrictionWeakLogin, fleetRestrictionWeakMCPToken.id);
+  const fleetRestrictionAttackerMCPRevokeBody = parseJSON(fleetRestrictionAttackerMCPRevoke);
+  const fleetRestrictionWeakMCPRevokeBody = parseJSON(fleetRestrictionWeakMCPRevoke);
+  const fleetRestrictionEqualAttack = await launchFleetRestriction(
+    fleetRestrictionWeakLogin,
+    fleetRestrictionWeakSearch,
+    fleetRestrictionsFixture.noob,
+    1,
+    { [String(fleetRestrictionSmallCargo)]: 1 }
+  );
   const fleetRestrictionVacationAttack = await launchFleetRestriction(
     fleetRestrictionAttackerLogin,
     fleetRestrictionAttackerSearch,
@@ -2760,6 +2855,8 @@ try {
   );
   const fleetRestrictionNoobAttackBody = parseJSON(fleetRestrictionNoobAttack);
   const fleetRestrictionStrongAttackBody = parseJSON(fleetRestrictionStrongAttack);
+  const fleetRestrictionWeakAfterBlockedBody = fleetRestrictionWeakAfterBlocked ? parseJSON(fleetRestrictionWeakAfterBlocked) : {};
+  const fleetRestrictionEqualAttackBody = parseJSON(fleetRestrictionEqualAttack);
   const fleetRestrictionVacationAttackBody = parseJSON(fleetRestrictionVacationAttack);
   const fleetRestrictionOperatorSpyBody = parseJSON(fleetRestrictionOperatorSpy);
   const fleetRestrictionAttackBanBody = parseJSON(fleetRestrictionAttackBan);
@@ -8867,6 +8964,18 @@ try {
       check(!fleetRestrictionsReady || fleetRestrictionNoobAttackBody.actionIssue?.code === "target_noob", "newbie-protected target returns legacy noob issue", fleetRestrictionNoobAttackBody.actionIssue ?? {}),
       check(!fleetRestrictionsReady || fleetRestrictionStrongAttack.status === 200, "strong-protected target launch returns HTTP 200", { status: fleetRestrictionStrongAttack.status }),
       check(!fleetRestrictionsReady || fleetRestrictionStrongAttackBody.actionIssue?.code === "target_noob", "strong-protected target shares the legacy noob issue", fleetRestrictionStrongAttackBody.actionIssue ?? {}),
+      check(!fleetRestrictionsReady || (fleetRestrictionAttackerMCPToken.response.status === 200 && fleetRestrictionWeakMCPToken.response.status === 200), "fleet restriction users can create temporary MCP fleet tokens", {
+        protectedStatus: fleetRestrictionAttackerMCPToken.response.status,
+        equalStatus: fleetRestrictionWeakMCPToken.response.status
+      }),
+      check(!fleetRestrictionsReady || (fleetRestrictionProtectedMCP.status === 200 && fleetRestrictionProtectedMCPResult.ready === false && fleetRestrictionProtectedMCPResult.issue?.code === "target_noob"), "MCP validate_fleet_dispatch rejects the protected 8,478-to-293 point attack", fleetRestrictionProtectedMCPResult),
+      check(!fleetRestrictionsReady || (fleetRestrictionEqualMCP.status === 200 && fleetRestrictionEqualMCPResult.ready === true && fleetRestrictionEqualMCPResult.issue == null), "MCP validate_fleet_dispatch allows the equal 293-point attack", fleetRestrictionEqualMCPResult),
+      check(!fleetRestrictionsReady || (fleetRestrictionAttackerMCPRevokeBody.revoked === true && fleetRestrictionWeakMCPRevokeBody.revoked === true), "temporary newbie-protection MCP tokens are revoked", {
+        protected: fleetRestrictionAttackerMCPRevokeBody,
+        equal: fleetRestrictionWeakMCPRevokeBody
+      }),
+      check(!fleetRestrictionsReady || fleetRestrictionEqualAttack.status === 200, "equal 293-point target launch returns HTTP 200", { status: fleetRestrictionEqualAttack.status }),
+      check(!fleetRestrictionsReady || (fleetRestrictionEqualAttackBody.authenticated === true && fleetRestrictionEqualAttackBody.actionIssue == null), "equal 293-point players may attack each other", fleetRestrictionEqualAttackBody.actionIssue ?? {}),
       check(!fleetRestrictionsReady || fleetRestrictionVacationAttack.status === 200, "vacation target launch returns HTTP 200", { status: fleetRestrictionVacationAttack.status }),
       check(!fleetRestrictionsReady || fleetRestrictionVacationAttackBody.actionIssue?.code === "vacation_other", "vacation target returns legacy vacation issue", fleetRestrictionVacationAttackBody.actionIssue ?? {}),
       check(!fleetRestrictionsReady || fleetRestrictionOperatorSpy.status === 200, "operator target spy launch returns HTTP 200", { status: fleetRestrictionOperatorSpy.status }),
@@ -8893,10 +9002,19 @@ try {
       ),
       check(
         !fleetRestrictionsReady ||
-          (fleetRestrictionWeakAfterBody.fleet?.missions?.length ?? -1) === (fleetRestrictionWeakBeforeBody.fleet?.missions?.length ?? -2),
+          (fleetRestrictionWeakAfterBlockedBody.fleet?.missions?.length ?? -1) === (fleetRestrictionWeakBeforeBody.fleet?.missions?.length ?? -2),
         "blocked strong-target launch does not create weak attacker fleet rows",
         {
           before: fleetRestrictionWeakBeforeBody.fleet?.missions?.length,
+          after: fleetRestrictionWeakAfterBlockedBody.fleet?.missions?.length
+        }
+      ),
+      check(
+        !fleetRestrictionsReady ||
+          (fleetRestrictionWeakAfterBody.fleet?.missions?.length ?? -1) === (fleetRestrictionWeakAfterBlockedBody.fleet?.missions?.length ?? -2) + 1,
+        "equal 293-point attack creates exactly one weak attacker fleet row",
+        {
+          before: fleetRestrictionWeakAfterBlockedBody.fleet?.missions?.length,
           after: fleetRestrictionWeakAfterBody.fleet?.missions?.length
         }
       ),

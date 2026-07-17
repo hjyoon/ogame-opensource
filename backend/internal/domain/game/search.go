@@ -73,5 +73,5 @@ func (r SearchAllianceRow) DisplayScore() int64 {
 	if r.Score < 0 {
 		return 0
 	}
-	return r.Score / 1000
+	return r.Score / ScoreDisplayScale
 }
