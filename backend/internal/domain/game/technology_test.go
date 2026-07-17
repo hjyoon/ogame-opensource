@@ -156,6 +156,27 @@ func TestBuildTechnologyDemolishRejectsInvalidTargets(t *testing.T) {
 	}
 }
 
+func TestBuildTechnologyInfoExposesEveryLegacyDemolitionLink(t *testing.T) {
+	levels := BuildingLevels{}
+	for _, id := range BuildingIDs() {
+		levels[id] = 1
+	}
+
+	for _, id := range BuildingIDs() {
+		info, ok := BuildTechnologyInfoWithSettings(id, PlanetOverview{}, levels, ResearchLevels{}, 128, 70)
+		if !ok {
+			t.Fatalf("expected technology info for building %d", id)
+		}
+		wantDemolish := id != BuildingTerraformer && id != BuildingLunarBase
+		if wantDemolish && (info.Demolish == nil || info.Demolish.Level != 1) {
+			t.Errorf("building %d must expose its shared legacy demolition action: %+v", id, info.Demolish)
+		}
+		if !wantDemolish && info.Demolish != nil {
+			t.Errorf("building %d must not expose a legacy demolition action: %+v", id, info.Demolish)
+		}
+	}
+}
+
 func TestBuildTechnologyInfoUsesLegacyInfosPreview(t *testing.T) {
 	info, ok := BuildTechnologyInfoWithSpeed(BuildingMetalMine, PlanetOverview{}, BuildingLevels{}, ResearchLevels{}, 128)
 	if !ok {

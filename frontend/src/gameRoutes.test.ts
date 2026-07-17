@@ -1,5 +1,6 @@
 import { describe, expect, test } from "bun:test";
 import {
+  gameBuildingRouteMutation,
   gameBuddyRequestURL,
   gameFleetTargetPrefillFromSearch,
   gameFleetTargetURL,
@@ -27,6 +28,18 @@ describe("game route model", () => {
     expect(gameRoutes.map((route) => route.path)).toContain("/game/payment");
     expect(gameRoutes.map((route) => route.path)).toContain("/game/jump-gate");
     expect(gameRoutes.map((route) => route.path)).toContain("/game/mcp-guide");
+  });
+
+  test("parses legacy building route mutations for direct and new-tab actions", () => {
+    expect(gameBuildingRouteMutation("?modus=destroy&techid=4&planet=7")).toEqual({
+      action: "destroy",
+      techId: 4
+    });
+    expect(gameBuildingRouteMutation("?modus=add&techid=21")).toEqual({ action: "add", techId: 21 });
+    expect(gameBuildingRouteMutation("?modus=remove&listid=3")).toEqual({ action: "remove", techId: 0, listId: 3 });
+    expect(gameBuildingRouteMutation("?modus=destroy&techid=0")).toBeNull();
+    expect(gameBuildingRouteMutation("?modus=remove&listid=bad")).toBeNull();
+    expect(gameBuildingRouteMutation("?modus=unknown&techid=4")).toBeNull();
   });
 
   test("normalizes game paths", () => {

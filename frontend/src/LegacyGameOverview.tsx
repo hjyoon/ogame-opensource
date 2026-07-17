@@ -2860,7 +2860,13 @@ export function LegacyGameOverview({
         {overview && route.key === "technology" && !technology && !technologyError && !technologyIssue ? (
           <LegacyMessage tone="neutral" text="Loading technology..." />
         ) : null}
-        {technology && route.key === "technology" ? <TechnologyTable onBuildingAction={onBuildingAction} technology={technology} /> : null}
+        {technology && route.key === "technology" ? (
+          <TechnologyTable
+            onBuildingAction={onBuildingAction}
+            pending={buildingsPending}
+            technology={technology}
+          />
+        ) : null}
         {overview && route.key === "jumpGate" && !jumpGate && !jumpGateError && !jumpGateIssue && !jumpGateActionIssue ? (
           <LegacyMessage tone="neutral" text="Loading jump gate..." />
         ) : null}
@@ -14790,13 +14796,22 @@ function gameSearchBaseParams(): URLSearchParams {
 
 function TechnologyTable({
   onBuildingAction,
+  pending,
   technology
 }: {
   onBuildingAction: (action: "add" | "destroy" | "remove", techID: number, listID?: number) => void;
+  pending: boolean;
   technology: GameTechnology;
 }) {
   if (technology.info) {
-    return <TechnologyInfoTable currentPlanet={technology.currentPlanet} info={technology.info} />;
+    return (
+      <TechnologyInfoTable
+        currentPlanet={technology.currentPlanet}
+        info={technology.info}
+        onBuildingAction={onBuildingAction}
+        pending={pending}
+      />
+    );
   }
   if (technology.details) {
     return <TechnologyDetailsTable details={technology.details} />;
@@ -14853,8 +14868,36 @@ function TechnologyDetailsTable({ details }: { details: GameTechnologyDetails })
   return <div dangerouslySetInnerHTML={{ __html: technologyDetailsHTML(details) }} />;
 }
 
-function TechnologyInfoTable({ currentPlanet, info }: { currentPlanet: GamePlanetOverview; info: GameTechnologyInfo }) {
-  return <div dangerouslySetInnerHTML={{ __html: technologyInfoHTML(info, currentPlanet) }} />;
+function TechnologyInfoTable({
+  currentPlanet,
+  info,
+  onBuildingAction,
+  pending
+}: {
+  currentPlanet: GamePlanetOverview;
+  info: GameTechnologyInfo;
+  onBuildingAction: (action: "add" | "destroy" | "remove", techID: number, listID?: number) => void;
+  pending: boolean;
+}) {
+  return (
+    <div
+      dangerouslySetInnerHTML={{ __html: technologyInfoHTML(info, currentPlanet) }}
+      onClick={(event) => {
+        const target = event.target instanceof Element ? event.target.closest<HTMLElement>("[data-technology-action='destroy']") : null;
+        if (!target) {
+          return;
+        }
+        event.preventDefault();
+        if (pending) {
+          return;
+        }
+        const techID = Number(target.dataset.techId);
+        if (Number.isSafeInteger(techID) && techID > 0) {
+          onBuildingAction("destroy", techID);
+        }
+      }}
+    />
+  );
 }
 
 function technologyInfoHTML(info: GameTechnologyInfo, currentPlanet: GamePlanetOverview): string {
@@ -14964,7 +15007,7 @@ function technologyInfoDemolishHTML(info: GameTechnologyInfo, planetID: number):
     .map((part) => `${part.name.toLowerCase()}:<b>${formatLegacyNumber(part.value)}</b>`)
     .join(" ");
   return `<table width=519 >
-<tr><td class=c align=center><a href="${legacyHTMLAttribute(href)}">Demolish: ${legacyHTMLText(info.name)} Level ${info.demolish.level} destroy?</a></td></tr>
+<tr><td class=c align=center><a href="${legacyHTMLAttribute(href)}" data-technology-action="destroy" data-tech-id="${info.id}">Demolish: ${legacyHTMLText(info.name)} Level ${info.demolish.level} destroy?</a></td></tr>
 <br><tr><th>Required ${resourceText}${resourceText ? " " : ""}</th></tr>
 <tr><th><br>Duration of demolition:  ${formatLegacyDuration(info.demolish.durationSeconds)}<br></th></tr></table>
 `;

@@ -597,6 +597,81 @@ function auth_visual_prepare_short_queue_fixture(string $password): array
     );
 }
 
+function auth_visual_prepare_demolition_fixture(string $password): array
+{
+    global $db_prefix;
+
+    $user = auth_visual_prepare_user('visualdemolition', $password, USER_TYPE_PLAYER);
+    $playerId = (int)$user['player_id'];
+    $planetId = (int)$user['home_planet_id'];
+    $now = auth_visual_now();
+
+    dbquery(
+        "UPDATE {$db_prefix}planets SET `" . GID_B_SOLAR . "`=21, `" . GID_RC_METAL . "`=1000000, " .
+        "`" . GID_RC_CRYSTAL . "`=1000000, `" . GID_RC_DEUTERIUM . "`=1000000, " .
+        "fields=21, maxfields=200, lastpeek={$now} WHERE planet_id={$planetId} AND owner_id={$playerId}"
+    );
+    dbquery("DELETE FROM {$db_prefix}queue WHERE owner_id={$playerId} AND type IN ('" . QTYP_BUILD . "','" . QTYP_DEMOLISH . "')");
+    dbquery("DELETE FROM {$db_prefix}buildqueue WHERE owner_id={$playerId} OR planet_id={$planetId}");
+    $auth = auth_visual_prepare_session($playerId);
+    SelectPlanet($playerId, $planetId);
+
+    return array(
+        'login_user' => $user['name'],
+        'player_id' => $playerId,
+        'home_planet_id' => $planetId,
+        'session' => $auth['session'],
+        'private_session' => $auth['private_session'],
+        'cookies' => $auth['cookies'],
+    );
+}
+
+function auth_visual_prepare_demolition_queue_fixture(string $password): array
+{
+    global $db_prefix;
+
+    $user = auth_visual_prepare_user('visualdemocancel', $password, USER_TYPE_PLAYER);
+    $playerId = (int)$user['player_id'];
+    $planetId = (int)$user['home_planet_id'];
+    $now = auth_visual_now();
+    $level = 20;
+    $duration = 3600;
+
+    dbquery(
+        "UPDATE {$db_prefix}planets SET `" . GID_B_SOLAR . "`=21, `" . GID_RC_METAL . "`=1000000, " .
+        "`" . GID_RC_CRYSTAL . "`=1000000, `" . GID_RC_DEUTERIUM . "`=1000000, " .
+        "fields=21, maxfields=200, lastpeek={$now} WHERE planet_id={$planetId} AND owner_id={$playerId}"
+    );
+    dbquery("DELETE FROM {$db_prefix}queue WHERE owner_id={$playerId} AND type IN ('" . QTYP_BUILD . "','" . QTYP_DEMOLISH . "')");
+    dbquery("DELETE FROM {$db_prefix}buildqueue WHERE owner_id={$playerId} OR planet_id={$planetId}");
+    AdjustResources(TechPrice(GID_B_SOLAR, $level), $planetId, '-');
+    $buildQueueId = AddDBRow(
+        array(
+            'owner_id' => $playerId,
+            'planet_id' => $planetId,
+            'list_id' => 1,
+            'tech_id' => GID_B_SOLAR,
+            'level' => $level,
+            'destroy' => 1,
+            'start' => $now,
+            'end' => $now + $duration,
+        ),
+        'buildqueue'
+    );
+    AddQueue($playerId, QTYP_DEMOLISH, $buildQueueId, GID_B_SOLAR, $level, $now, $duration, QUEUE_PRIO_BUILD);
+    $auth = auth_visual_prepare_session($playerId);
+    SelectPlanet($playerId, $planetId);
+
+    return array(
+        'login_user' => $user['name'],
+        'player_id' => $playerId,
+        'home_planet_id' => $planetId,
+        'session' => $auth['session'],
+        'private_session' => $auth['private_session'],
+        'cookies' => $auth['cookies'],
+    );
+}
+
 function auth_visual_prepare_short_research_fixture(string $password): array
 {
     global $db_prefix;
@@ -954,6 +1029,8 @@ try {
     $lowFuel = $galaxyHover['low_fuel'] ?? null;
     $noCargo = $galaxyHover['no_cargo'] ?? null;
     $queueShort = auth_visual_prepare_short_queue_fixture($password);
+    $demolition = auth_visual_prepare_demolition_fixture($password);
+    $demolitionQueue = auth_visual_prepare_demolition_queue_fixture($password);
     $researchShort = auth_visual_prepare_short_research_fixture($password);
     $shipyardShort = auth_visual_prepare_short_shipyard_fixture($password);
     $botedit = auth_visual_prepare_botedit_fixture();
@@ -1003,6 +1080,8 @@ try {
         'low_fuel' => $lowFuel,
         'no_cargo' => $noCargo,
         'queue_short' => $queueShort,
+        'demolition' => $demolition,
+        'demolition_queue' => $demolitionQueue,
         'research_short' => $researchShort,
         'shipyard_short' => $shipyardShort,
         'botedit' => $botedit,

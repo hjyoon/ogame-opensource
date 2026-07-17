@@ -51,7 +51,7 @@ import { LegacyPublicStory } from "./LegacyPublicStory";
 import { LegacyPublicUniverses } from "./LegacyPublicUniverses";
 import { LegacyRegistrationForm } from "./LegacyRegistrationForm";
 import { readAPIJSON } from "./apiResponse";
-import { gameRouteURL, resolveGameRoute } from "./gameRoutes";
+import { gameBuildingRouteMutation, gameRouteURL, resolveGameRoute } from "./gameRoutes";
 import { legacyPublicCssHrefs, legacyPublicRouteKeys, publicRoutes, resolvePublicRoute } from "./routes";
 import "./styles.css";
 
@@ -424,6 +424,7 @@ function App() {
   const gameOverviewRequestRef = useRef<AbortController | null>(null);
   const gameOverviewBackgroundPendingRef = useRef(false);
   const lastGameOverviewRefreshAtRef = useRef(0);
+  const lastGameBuildingRouteMutationRef = useRef("");
   const resolution = resolvePublicRoute(pathname);
   const route = resolution.route;
   const isLegacyRegistrationRoute = isLegacyRegistrationFormPath(pathname);
@@ -766,7 +767,7 @@ function App() {
     }
     const currentSearch = new URLSearchParams(search);
     const buildingsSearch = new URLSearchParams({ session: publicSession });
-    const selectedPlanet = currentSearch.get("cp");
+    const selectedPlanet = currentSearch.get("cp") || currentSearch.get("planet");
     if (selectedPlanet) {
       buildingsSearch.set("cp", selectedPlanet);
     }
@@ -788,10 +789,6 @@ function App() {
       });
   };
 
-  useEffect(() => {
-    loadGameBuildings();
-  }, [gameRoute?.key, gameShipyardRefreshToken, search]);
-
   const submitGameBuildingsMutation = (
     body: { action: "add" | "destroy" | "remove"; techId: number; listId?: number },
     retrySameSecond = true
@@ -803,7 +800,7 @@ function App() {
     }
     const currentSearch = new URLSearchParams(search);
     const buildingsSearch = new URLSearchParams({ session: publicSession });
-    const selectedPlanet = currentSearch.get("cp");
+    const selectedPlanet = currentSearch.get("cp") || currentSearch.get("planet");
     if (selectedPlanet) {
       buildingsSearch.set("cp", selectedPlanet);
     }
@@ -849,6 +846,20 @@ function App() {
   const submitGameBuildingAction = (action: "add" | "destroy" | "remove", techId: number, listId?: number) => {
     submitGameBuildingsMutation({ action, techId, listId });
   };
+
+  useEffect(() => {
+    const routeMutation = gameRoute?.key === "buildings" ? gameBuildingRouteMutation(search) : null;
+    if (routeMutation) {
+      const signature = `${new URLSearchParams(search).get("session") ?? ""}|${search}`;
+      if (lastGameBuildingRouteMutationRef.current !== signature) {
+        lastGameBuildingRouteMutationRef.current = signature;
+        submitGameBuildingsMutation(routeMutation);
+      }
+      return;
+    }
+    lastGameBuildingRouteMutationRef.current = "";
+    loadGameBuildings();
+  }, [gameRoute?.key, gameShipyardRefreshToken, search]);
 
   const syncGameOverviewFromResources = (payload: GameResourcesStatus) => {
     if (payload.authenticated) {

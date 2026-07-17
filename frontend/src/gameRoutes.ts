@@ -305,6 +305,26 @@ export function gamePlanetSwitchURL(pathname: string, search: string, planetID: 
   return gameRouteURL(resolveGameRoute(pathname, search).path, query.toString());
 }
 
+export type GameBuildingRouteMutation = {
+  action: "add" | "destroy" | "remove";
+  techId: number;
+  listId?: number;
+};
+
+export function gameBuildingRouteMutation(search: string): GameBuildingRouteMutation | null {
+  const query = new URLSearchParams(search);
+  const action = query.get("modus");
+  if (action === "add" || action === "destroy") {
+    const techId = positiveRouteInteger(query.get("techid"));
+    return techId === null ? null : { action, techId };
+  }
+  if (action === "remove") {
+    const listId = positiveRouteInteger(query.get("listid"));
+    return listId === null ? null : { action, techId: 0, listId };
+  }
+  return null;
+}
+
 export type GameFleetTargetLink = {
   galaxy: number;
   system: number;
@@ -383,4 +403,12 @@ function parseLegacyFleetTargetInt(value: string | null): number | null {
     return null;
   }
   return Math.trunc(Math.abs(parsed));
+}
+
+function positiveRouteInteger(value: string | null): number | null {
+  if (value === null || value.trim() === "") {
+    return null;
+  }
+  const parsed = Number(value);
+  return Number.isSafeInteger(parsed) && parsed > 0 ? parsed : null;
 }

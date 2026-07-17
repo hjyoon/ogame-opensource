@@ -63,7 +63,7 @@ export type GameDynamicLinkAudit = {
 
 export type GameDynamicBehaviorSpec = {
   name: string;
-  fixtureProfile?: "admin" | "max_fleet" | "no_ships" | "low_fuel" | "no_cargo" | "queue_short" | "research_short" | "shipyard_short";
+  fixtureProfile?: "admin" | "max_fleet" | "no_ships" | "low_fuel" | "no_cargo" | "queue_short" | "demolition" | "demolition_queue" | "research_short" | "shipyard_short";
   fixedClock?: boolean;
   legacyPage: string;
   legacyQuery?: Record<string, string>;
@@ -3565,6 +3565,167 @@ export const gameDynamicBehaviorSpecs: GameDynamicBehaviorSpec[] = [
       { name: "trade-button-count", type: "count", legacySelector: "#content input[name='trade']", migratedSelector: ".legacy-merchant-exchange-table input[name='trade']", expected: "0" }
     ],
     notes: ["Covers successful trader exchange submission consuming the active merchant offer."]
+  },
+  {
+    name: "technology-solar-plant-demolish-action",
+    fixtureProfile: "demolition",
+    fixedClock: false,
+    isolateSides: true,
+    legacyPage: "infos",
+    legacyQuery: { gid: "4" },
+    migratedPath: "/game/technology",
+    migratedQuery: { gid: "4" },
+    legacyReady: "#content a[href*='page=b_building'][href*='modus=destroy'][href*='techid=4']",
+    migratedReady: "[data-technology-action='destroy'][data-tech-id='4']",
+    actions: [
+      {
+        type: "click",
+        legacySelector: "#content a[href*='page=b_building'][href*='modus=destroy'][href*='techid=4']",
+        migratedSelector: "[data-technology-action='destroy'][data-tech-id='4']",
+        legacyWaitForSelector: "#content a[href*='modus=remove'][href*='listid=1']",
+        migratedWaitForSelector: ".legacy-buildings-table a[href*='modus=remove'][href*='listid=1']"
+      }
+    ],
+    assertions: [
+      {
+        name: "demolition-queue-visible",
+        type: "evaluate",
+        expression:
+          "document.body.innerText.includes('Solar Plant') && document.querySelectorAll(\"a[href*='modus=remove'][href*='listid=1']\").length >= 1",
+        expected: "true"
+      },
+      {
+        name: "buildings-route-after-demolition",
+        type: "evaluate",
+        expression:
+          "(() => { const url = new URL(window.location.href); return url.pathname === '/game/buildings' || (url.pathname === '/game/index.php' && url.searchParams.get('page') === 'b_building'); })()",
+        expected: "true"
+      }
+    ],
+    visual: {
+      enabled: true,
+      normalizePageName: "game-buildings",
+      maskSelectors: ["#bxx", ".z"],
+      maxDiffRatio: 0,
+      colorDeltaThreshold: 0
+    },
+    linkAudit: {
+      expected: [
+        {
+          name: "solar-plant-demolish-target",
+          target: "/game/buildings?*modus=destroy*planet=#*techid=#*",
+          scope: "action",
+          classification: "visual"
+        },
+        {
+          name: "demolition-cancel-target",
+          target: "/game/buildings?*listid=#*modus=remove*planet=#*",
+          scope: "after",
+          classification: "visual"
+        }
+      ]
+    },
+    notes: ["Covers the infos.php demolition link, immediate Solar Plant level 21 queue mutation, destination route, cancellation link, and exact post-action visual parity."]
+  },
+  {
+    name: "technology-solar-plant-demolish-direct-route",
+    fixtureProfile: "demolition",
+    fixedClock: false,
+    isolateSides: true,
+    legacyPage: "b_building",
+    legacyQuery: {
+      modus: "destroy",
+      techid: "4",
+      planet: "$fixture.demolition.home_planet_id"
+    },
+    migratedPath: "/game/buildings",
+    migratedQuery: {
+      cp: "",
+      modus: "destroy",
+      techid: "4",
+      planet: "$fixture.demolition.home_planet_id"
+    },
+    legacyReady: "#content a[href*='modus=remove'][href*='listid=1']",
+    migratedReady: ".legacy-buildings-table a[href*='modus=remove'][href*='listid=1']",
+    actions: [],
+    assertions: [
+      {
+        name: "direct-route-demolition-queue-visible",
+        type: "evaluate",
+        expression:
+          "document.body.innerText.includes('Solar Plant') && document.querySelectorAll(\"a[href*='modus=remove'][href*='listid=1']\").length >= 1",
+        expected: "true"
+      },
+      {
+        name: "direct-route-cleans-to-buildings",
+        type: "evaluate",
+        expression:
+          "(() => { const url = new URL(window.location.href); return url.pathname === '/game/buildings' || (url.pathname === '/game/index.php' && url.searchParams.get('page') === 'b_building'); })()",
+        expected: "true"
+      }
+    ],
+    visual: {
+      enabled: true,
+      normalizePageName: "game-buildings",
+      maskSelectors: ["#bxx", ".z"],
+      maxDiffRatio: 0,
+      colorDeltaThreshold: 0
+    },
+    linkAudit: {
+      expected: [
+        {
+          name: "direct-demolition-cancel-target",
+          target: "/game/buildings?*listid=#*modus=remove*planet=#*",
+          scope: "before",
+          classification: "visual"
+        }
+      ]
+    },
+    notes: ["Covers direct and new-tab legacy demolition URLs so route actions cannot degrade into a read-only Buildings navigation."]
+  },
+  {
+    name: "technology-solar-plant-demolish-cancel-direct-route",
+    fixtureProfile: "demolition_queue",
+    fixedClock: false,
+    isolateSides: true,
+    legacyPage: "b_building",
+    legacyQuery: {
+      modus: "remove",
+      listid: "1",
+      planet: "$fixture.demolition_queue.home_planet_id"
+    },
+    migratedPath: "/game/buildings",
+    migratedQuery: {
+      cp: "",
+      modus: "remove",
+      listid: "1",
+      planet: "$fixture.demolition_queue.home_planet_id"
+    },
+    legacyReady: "#content table",
+    migratedReady: ".legacy-buildings-table",
+    actions: [],
+    assertions: [
+      {
+        name: "direct-route-demolition-queue-removed",
+        type: "count",
+        selector: "a[href*='modus=remove'][href*='listid=1']",
+        expected: "0"
+      },
+      {
+        name: "direct-cancel-route-cleans-to-buildings",
+        type: "evaluate",
+        expression:
+          "(() => { const url = new URL(window.location.href); return url.pathname === '/game/buildings' || (url.pathname === '/game/index.php' && url.searchParams.get('page') === 'b_building'); })()",
+        expected: "true"
+      }
+    ],
+    visual: {
+      enabled: true,
+      normalizePageName: "game-buildings",
+      maxDiffRatio: 0,
+      colorDeltaThreshold: 0
+    },
+    notes: ["Covers direct and new-tab cancellation URLs for an active demolition queue, including explicit planet selection and exact post-cancel parity."]
   },
   {
     name: "technology-light-fighter-rapid-fire-link",

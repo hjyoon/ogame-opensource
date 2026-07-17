@@ -38,6 +38,8 @@ type AuthFixture = {
   low_fuel?: AuthProfile;
   no_cargo?: AuthProfile;
   queue_short?: AuthProfile;
+  demolition?: AuthProfile;
+  demolition_queue?: AuthProfile;
   research_short?: AuthProfile;
   shipyard_short?: AuthProfile;
   features?: Partial<Record<"acs" | "alliance" | "commander" | "phalanx" | "premium" | "report", boolean>>;
