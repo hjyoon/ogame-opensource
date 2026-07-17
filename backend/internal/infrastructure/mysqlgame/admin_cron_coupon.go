@@ -22,11 +22,29 @@ func (r AdminRepository) finishDueAdminCouponCronTasks(ctx context.Context, tabl
 	}
 	mails := []domaingame.AdminCouponMail{}
 	for _, task := range tasks {
-		generated, err := r.finishAdminCouponCronTask(ctx, tables, task)
+		generated := []domaingame.AdminCouponMail{}
+		claimed, err := finishDueQueueTaskAtomically(
+			ctx,
+			r.queryer,
+			r.execer,
+			tables.queue,
+			dueQueueTaskClaim{TaskID: task.TaskID, Type: task.Type, End: task.End, AllowFrozen: true},
+			until,
+			func(queryer Queryer, execer Execer) error {
+				transactional := r
+				transactional.queryer = queryer
+				transactional.execer = execer
+				var finishErr error
+				generated, finishErr = transactional.finishAdminCouponCronTask(ctx, tables, task)
+				return finishErr
+			},
+		)
 		if err != nil {
 			return nil, err
 		}
-		mails = append(mails, generated...)
+		if claimed {
+			mails = append(mails, generated...)
+		}
 	}
 	return mails, nil
 }

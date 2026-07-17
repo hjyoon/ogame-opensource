@@ -303,7 +303,21 @@ func (r ResearchRepository) FinishDueResearchQueues(ctx context.Context, until i
 		return err
 	}
 	for _, task := range tasks {
-		if err := r.finishResearchQueueTask(ctx, usersTable, planetsTable, queueTable, task); err != nil {
+		_, err := finishDueQueueTaskAtomically(
+			ctx,
+			r.queryer,
+			r.execer,
+			queueTable,
+			dueQueueTaskClaim{TaskID: task.TaskID, Type: task.Type, End: task.End},
+			until,
+			func(queryer Queryer, execer Execer) error {
+				claimed := r
+				claimed.queryer = queryer
+				claimed.execer = execer
+				return claimed.finishResearchQueueTask(ctx, usersTable, planetsTable, queueTable, task)
+			},
+		)
+		if err != nil {
 			return err
 		}
 	}

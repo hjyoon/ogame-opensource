@@ -54,6 +54,9 @@ fi
 
 if command -v go >/dev/null 2>&1 && go version >/dev/null 2>&1; then
   "$ROOT_DIR/backend/scripts/test-coverage.sh"
+  if [ "${OGAME_RUN_QUEUE_CLAIM_CONCURRENCY_E2E:-1}" = "1" ]; then
+    "$SCRIPT_DIR/run-golang-queue-claim-concurrency-e2e.sh"
+  fi
 else
   printf 'SKIP backend tests: go was not available\n'
 fi

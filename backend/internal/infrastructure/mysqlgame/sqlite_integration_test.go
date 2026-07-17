@@ -4,6 +4,7 @@ import (
 	"context"
 	"crypto/sha256"
 	"encoding/hex"
+	"sync"
 	"testing"
 	"time"
 
@@ -15,6 +16,93 @@ import (
 	"github.com/hjyoon/ogame-opensource/backend/internal/infrastructure/mysqlregistration"
 	"github.com/hjyoon/ogame-opensource/backend/internal/infrastructure/sqlitedb"
 )
+
+func TestSQLiteConcurrentAttackQueueCompletesExactlyOnce(t *testing.T) {
+	db, err := sqlitedb.Open(":memory:")
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer db.Close()
+	now := time.Unix(1_700_000_000, 0)
+	if err := sqlitedb.BootstrapUniverse(context.Background(), db, sqlitedb.BootstrapOptions{
+		Prefix:        "uni1_",
+		Secret:        "secret",
+		Universe:      1,
+		AdminEmail:    "admin@example.local",
+		AdminPassword: "admin",
+		Now:           now,
+	}); err != nil {
+		t.Fatal(err)
+	}
+	defender, err := mysqlregistration.NewAccountCreator(db, "uni1_", "secret").CreateRegistrationAccount(
+		context.Background(),
+		domainpublicsite.RegistrationDraft{
+			Character: "QueueDefender",
+			Password:  "Queue123!",
+			Email:     "queue-defender@example.local",
+		},
+		"127.0.0.1",
+	)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if _, err := db.Exec("UPDATE uni1_planets SET `700` = 1000, `701` = 1000, `702` = 1000, lastpeek = ? WHERE planet_id = ?", now.Unix(), defender.HomePlanetID); err != nil {
+		t.Fatal(err)
+	}
+	fleetResult, err := db.Exec("INSERT INTO uni1_fleet (owner_id, union_id, `700`, `701`, `702`, fuel, mission, start_planet, target_planet, flight_time, deploy_time, `202`) VALUES (1, 0, 0, 0, 0, 0, ?, 1, ?, 30, 0, 1)", domaingame.FleetMissionAttack, defender.HomePlanetID)
+	if err != nil {
+		t.Fatal(err)
+	}
+	fleetID, err := fleetResult.LastInsertId()
+	if err != nil {
+		t.Fatal(err)
+	}
+	if _, err := db.Exec("INSERT INTO uni1_queue (owner_id, type, sub_id, obj_id, level, start, end, prio, freeze, frozen) VALUES (1, 'Fleet', ?, ?, 0, ?, ?, 0, 0, 0)", fleetID, domaingame.FleetMissionAttack, now.Unix()-30, now.Unix()); err != nil {
+		t.Fatal(err)
+	}
+
+	const workers = 12
+	start := make(chan struct{})
+	errs := make(chan error, workers)
+	var wait sync.WaitGroup
+	for range workers {
+		wait.Add(1)
+		go func() {
+			defer wait.Done()
+			<-start
+			errs <- mysqlgame.NewFleetRepository(db, "uni1_").FinishDueFleetQueues(context.Background(), int(now.Unix()))
+		}()
+	}
+	close(start)
+	wait.Wait()
+	close(errs)
+	for err := range errs {
+		if err != nil {
+			t.Fatalf("concurrent fleet completion failed: %v", err)
+		}
+	}
+
+	for _, check := range []struct {
+		name  string
+		query string
+		args  []any
+		want  int
+	}{
+		{name: "battle", query: "SELECT COUNT(*) FROM uni1_battledata WHERE date = ?", args: []any{now.Unix()}, want: 1},
+		{name: "return fleet", query: "SELECT COUNT(*) FROM uni1_fleet WHERE owner_id = 1 AND mission = ?", args: []any{domaingame.FleetMissionAttack + domaingame.FleetMissionReturnOffset}, want: 1},
+		{name: "return queue", query: "SELECT COUNT(*) FROM uni1_queue WHERE owner_id = 1 AND type = 'Fleet'", want: 1},
+		{name: "return log", query: "SELECT COUNT(*) FROM uni1_fleetlogs WHERE owner_id = 1 AND mission = ?", args: []any{domaingame.FleetMissionAttack + domaingame.FleetMissionReturnOffset}, want: 1},
+		{name: "battle messages", query: "SELECT COUNT(*) FROM uni1_messages WHERE date = ? AND pm IN (?, ?)", args: []any{now.Unix(), domaingame.MessageTypeBattleReportText, domaingame.MessageTypeBattleReportLink}, want: 4},
+	} {
+		var got int
+		if err := db.QueryRow(check.query, check.args...).Scan(&got); err != nil {
+			t.Fatalf("%s count: %v", check.name, err)
+		}
+		if got != check.want {
+			t.Fatalf("%s count = %d, want %d", check.name, got, check.want)
+		}
+	}
+}
 
 func TestSQLiteGalaxyRepositoryLoadsSeededSystem(t *testing.T) {
 	db, err := sqlitedb.Open(":memory:")

@@ -87,6 +87,10 @@ func TestSQLiteDialectDetectionTransactionAndLocks(t *testing.T) {
 	if detectSQLDialectFromRunner(&runner) != DialectSQLite || detectSQLDialectFromRunner(struct{}{}) != DialectMySQL {
 		t.Fatal("unexpected SQL runner dialect detection")
 	}
+	transaction := sqlTransactionRunner{dialect: DialectSQLite}
+	if detectSQLDialectFromRunner(transaction) != DialectSQLite || detectSQLDialectFromRunner(&transaction) != DialectSQLite {
+		t.Fatal("unexpected transaction runner dialect detection")
+	}
 	if _, err := runner.ExecContext(context.Background(), "CREATE TABLE items (id INTEGER PRIMARY KEY, value INTEGER)"); err != nil {
 		t.Fatal(err)
 	}

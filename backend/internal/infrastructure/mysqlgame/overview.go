@@ -695,6 +695,7 @@ func rankStatement(table string, idColumn string, scoreColumn string, placeColum
 type recalcPointQueueTask struct {
 	TaskID  int
 	OwnerID int
+	End     int
 }
 
 func (r OverviewRepository) FinishDueRecalcPointQueues(ctx context.Context, until int) error {
@@ -733,18 +734,31 @@ func (r OverviewRepository) finishDueRecalcPointQueues(ctx context.Context, unti
 	if err != nil {
 		return false, err
 	}
-	admin := AdminRepository{
-		queryer:  r.queryer,
-		execer:   r.execer,
-		overview: r,
-		prefix:   r.prefix,
-		now:      r.currentTime,
-	}
 	for _, task := range tasks {
-		if err := admin.recalcAdminUserStats(ctx, usersTable, planetsTable, fleetTable, task.OwnerID); err != nil {
-			return false, err
-		}
-		if err := (BuildingsRepository{execer: r.execer}).removeGlobalQueue(ctx, queueTable, task.TaskID); err != nil {
+		_, err := finishDueQueueTaskAtomically(
+			ctx,
+			r.queryer,
+			r.execer,
+			queueTable,
+			dueQueueTaskClaim{TaskID: task.TaskID, Type: queueTypeRecalcPoints, End: task.End},
+			until,
+			func(queryer Queryer, execer Execer) error {
+				admin := AdminRepository{
+					queryer:  queryer,
+					execer:   execer,
+					overview: r,
+					prefix:   r.prefix,
+					now:      r.currentTime,
+				}
+				admin.overview.queryer = queryer
+				admin.overview.execer = execer
+				if err := admin.recalcAdminUserStats(ctx, usersTable, planetsTable, fleetTable, task.OwnerID); err != nil {
+					return err
+				}
+				return (BuildingsRepository{execer: execer}).removeGlobalQueue(ctx, queueTable, task.TaskID)
+			},
+		)
+		if err != nil {
 			return false, err
 		}
 	}
@@ -757,7 +771,7 @@ func (r OverviewRepository) loadDueRecalcPointQueueTasks(ctx context.Context, qu
 	}
 	rows, err := r.queryer.QueryContext(
 		ctx,
-		fmt.Sprintf("SELECT task_id, owner_id FROM %s WHERE type = ? AND end <= ? AND freeze = 0 ORDER BY end ASC, prio DESC LIMIT ?", queueTable),
+		fmt.Sprintf("SELECT task_id, owner_id, end FROM %s WHERE type = ? AND end <= ? AND freeze = 0 ORDER BY end ASC, prio DESC LIMIT ?", queueTable),
 		queueTypeRecalcPoints,
 		until,
 		limit,
@@ -769,7 +783,7 @@ func (r OverviewRepository) loadDueRecalcPointQueueTasks(ctx context.Context, qu
 	tasks := []recalcPointQueueTask{}
 	for rows.Next() {
 		var task recalcPointQueueTask
-		if err := rows.Scan(&task.TaskID, &task.OwnerID); err != nil {
+		if err := rows.Scan(&task.TaskID, &task.OwnerID, &task.End); err != nil {
 			return nil, err
 		}
 		tasks = append(tasks, task)

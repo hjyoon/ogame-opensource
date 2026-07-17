@@ -625,7 +625,21 @@ func (r BuildingsRepository) FinishDueBuildingQueues(ctx context.Context, until 
 		return err
 	}
 	for _, task := range tasks {
-		if err := r.finishBuildingQueueTask(ctx, usersTable, planetsTable, buildQueueTable, queueTable, task); err != nil {
+		_, err := finishDueQueueTaskAtomically(
+			ctx,
+			r.queryer,
+			r.execer,
+			queueTable,
+			dueQueueTaskClaim{TaskID: task.TaskID, Type: task.Type, End: task.End},
+			until,
+			func(queryer Queryer, execer Execer) error {
+				claimed := r
+				claimed.queryer = queryer
+				claimed.execer = execer
+				return claimed.finishBuildingQueueTask(ctx, usersTable, planetsTable, buildQueueTable, queueTable, task)
+			},
+		)
+		if err != nil {
 			return err
 		}
 	}

@@ -71,7 +71,26 @@ func (r AdminRepository) runAdminCron(ctx context.Context, until int) ([]domaing
 		return nil, err
 	}
 	for _, task := range tasks {
-		if err := r.finishAdminCronTask(ctx, tables, task, universe.Language); err != nil {
+		if task.Type == adminCouponQueueType {
+			continue
+		}
+		_, err := finishDueQueueTaskAtomically(
+			ctx,
+			r.queryer,
+			r.execer,
+			tables.queue,
+			dueQueueTaskClaim{TaskID: task.TaskID, Type: task.Type, End: task.End},
+			until,
+			func(queryer Queryer, execer Execer) error {
+				claimed := r
+				claimed.queryer = queryer
+				claimed.execer = execer
+				claimed.overview.queryer = queryer
+				claimed.overview.execer = execer
+				return claimed.finishAdminCronTask(ctx, tables, task, universe.Language)
+			},
+		)
+		if err != nil {
 			return nil, err
 		}
 	}

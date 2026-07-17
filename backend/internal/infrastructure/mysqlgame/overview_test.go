@@ -300,7 +300,7 @@ func TestOverviewRepositoryFinishesDueFleetQueuesBeforeReadingEvents(t *testing.
 func TestOverviewRepositoryFinishesDueRecalcPointQueues(t *testing.T) {
 	runner := &fakeOverviewRunner{fakeQueryer: fakeQueryer{results: []fakeQueryResult{
 		{rows: fakeRowsFromValues([]any{1.0, 0})},
-		{rows: fakeRowsFromValues([]any{9101, 77})},
+		{rows: fakeRowsFromValues([]any{9101, 77, 1900})},
 		{rows: fakeRowsFromValues(recalcPlanetScoreRow(
 			map[int]int{domaingame.BuildingMetalMine: 2},
 			map[int]int{domaingame.FleetSmallCargo: 3},
@@ -339,7 +339,7 @@ func TestOverviewRepositoryReloadsUserAfterDueRecalcPointQueue(t *testing.T) {
 		{rows: fakeRowsFromValues([]any{128.0, 0})},
 		{rows: fakeRowsFromValues()},
 		{rows: fakeRowsFromValues([]any{128.0, 0})},
-		{rows: fakeRowsFromValues([]any{9101, 42})},
+		{rows: fakeRowsFromValues([]any{9101, 42, 1900})},
 		{rows: fakeRowsFromValues(recalcPlanetScoreRow(
 			map[int]int{domaingame.BuildingMetalMine: 2},
 			map[int]int{domaingame.FleetSmallCargo: 3},
@@ -389,7 +389,7 @@ func TestOverviewRepositoryFinishDueRecalcPointQueuesBranches(t *testing.T) {
 		t.Fatalf("expected frozen universe to stop after config, got calls=%+v execs=%+v", runner.calls, runner.execCalls)
 	}
 
-	queryer := &fakeQueryer{results: []fakeQueryResult{{rows: fakeRowsFromValues([]any{9102, 78})}}}
+	queryer := &fakeQueryer{results: []fakeQueryResult{{rows: fakeRowsFromValues([]any{9102, 78, 2000})}}}
 	tasks, err := NewOverviewRepositoryWithQueryer(queryer, "ogame_").loadDueRecalcPointQueueTasks(context.Background(), "`ogame_queue`", 2100, 0)
 	if err != nil {
 		t.Fatal(err)
@@ -424,7 +424,7 @@ func TestOverviewRepositoryFinishDueRecalcPointQueuesBranches(t *testing.T) {
 			name: "due scan",
 			results: []fakeQueryResult{
 				{rows: fakeRowsFromValues([]any{1.0, 0})},
-				{rows: fakeRowsFromValues([]any{"bad", 77})},
+				{rows: fakeRowsFromValues([]any{"bad", 77, 1900})},
 			},
 			want: "expected int",
 		},
@@ -432,7 +432,7 @@ func TestOverviewRepositoryFinishDueRecalcPointQueuesBranches(t *testing.T) {
 			name: "due rows",
 			results: []fakeQueryResult{
 				{rows: fakeRowsFromValues([]any{1.0, 0})},
-				{rows: fakeRowsFromValuesWithErr(errors.New("due rows failed"), []any{9101, 77})},
+				{rows: fakeRowsFromValuesWithErr(errors.New("due rows failed"), []any{9101, 77, 1900})},
 			},
 			want: "due rows failed",
 		},
@@ -440,7 +440,7 @@ func TestOverviewRepositoryFinishDueRecalcPointQueuesBranches(t *testing.T) {
 			name: "recalc query",
 			results: []fakeQueryResult{
 				{rows: fakeRowsFromValues([]any{1.0, 0})},
-				{rows: fakeRowsFromValues([]any{9101, 77})},
+				{rows: fakeRowsFromValues([]any{9101, 77, 1900})},
 				{err: errors.New("planet score failed")},
 			},
 			want: "planet score failed",
@@ -449,7 +449,7 @@ func TestOverviewRepositoryFinishDueRecalcPointQueuesBranches(t *testing.T) {
 			name: "delete queue",
 			results: []fakeQueryResult{
 				{rows: fakeRowsFromValues([]any{1.0, 0})},
-				{rows: fakeRowsFromValues([]any{9101, 77})},
+				{rows: fakeRowsFromValues([]any{9101, 77, 1900})},
 				{rows: fakeRowsFromValues(recalcPlanetScoreRow(map[int]int{domaingame.BuildingMetalMine: 2}, nil, nil))},
 				{rows: fakeRowsFromValues(allResearchLevelRow(nil))},
 				{rows: fakeRowsFromValues()},

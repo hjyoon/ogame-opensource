@@ -38,6 +38,10 @@ func detectSQLDialectFromRunner(runner any) SQLDialect {
 		return detectSQLDialect(value.DB)
 	case *SQLQueryer:
 		return detectSQLDialect(value.DB)
+	case sqlTransactionRunner:
+		return value.dialect
+	case *sqlTransactionRunner:
+		return value.dialect
 	}
 	return DialectMySQL
 }

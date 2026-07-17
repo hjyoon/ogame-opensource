@@ -141,7 +141,21 @@ func (r FleetRepository) FinishDueFleetQueues(ctx context.Context, until int) er
 		return err
 	}
 	for _, task := range tasks {
-		if err := r.finishFleetQueueTask(ctx, uniTable, fleetTable, fleetLogsTable, queueTable, planetsTable, messagesTable, usersTable, expeditionTable, battleTable, unionTable, task); err != nil {
+		_, err := finishDueQueueTaskAtomically(
+			ctx,
+			r.queryer,
+			r.execer,
+			queueTable,
+			dueQueueTaskClaim{TaskID: task.TaskID, Type: queueTypeFleet, End: int(task.End)},
+			until,
+			func(queryer Queryer, execer Execer) error {
+				claimed := r
+				claimed.queryer = queryer
+				claimed.execer = execer
+				return claimed.finishFleetQueueTask(ctx, uniTable, fleetTable, fleetLogsTable, queueTable, planetsTable, messagesTable, usersTable, expeditionTable, battleTable, unionTable, task)
+			},
+		)
+		if err != nil {
 			return err
 		}
 	}
@@ -252,6 +266,9 @@ func (r FleetRepository) updateFleetQueuePlanetResources(ctx context.Context, us
 		return false, err
 	}
 	if err := rows.Err(); err != nil {
+		return false, err
+	}
+	if err := rows.Close(); err != nil {
 		return false, err
 	}
 	now := time.Now()

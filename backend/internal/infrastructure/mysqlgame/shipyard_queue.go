@@ -76,7 +76,21 @@ func (r ShipyardRepository) FinishDueShipyardQueues(ctx context.Context, until i
 		return err
 	}
 	for _, task := range tasks {
-		if err := r.finishShipyardQueueTask(ctx, usersTable, planetsTable, queueTable, task, until); err != nil {
+		_, err := finishDueQueueTaskAtomically(
+			ctx,
+			r.queryer,
+			r.execer,
+			queueTable,
+			dueQueueTaskClaim{TaskID: task.TaskID, Type: task.Type, End: task.End},
+			until,
+			func(queryer Queryer, execer Execer) error {
+				claimed := r
+				claimed.queryer = queryer
+				claimed.execer = execer
+				return claimed.finishShipyardQueueTask(ctx, usersTable, planetsTable, queueTable, task, until)
+			},
+		)
+		if err != nil {
 			return err
 		}
 	}
