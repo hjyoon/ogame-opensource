@@ -138,6 +138,28 @@ func TestResearchDurationFloorsToOneSecond(t *testing.T) {
 	}
 }
 
+func TestBuildResearchUsesVirtualEnergyForGraviton(t *testing.T) {
+	levels := BuildingLevels{BuildingResearchLab: 12}
+	overview := Overview{CurrentPlanet: PlanetOverview{
+		Type:      PlanetTypePlanet,
+		Resources: Resources{Energy: 300_000},
+	}}
+
+	result := BuildResearch(overview, levels, ResearchLevels{}, BuildResearchLabLevels(12, nil, nil), 1, false, nil)
+	graviton := findResearch(t, result, ResearchGraviton)
+	if !graviton.CanBuild || graviton.Cost.Energy != 300_000 || graviton.DurationSeconds != 1 {
+		t.Fatalf("expected affordable level-one graviton research, got %+v", graviton)
+	}
+
+	overview.CurrentPlanet.Resources.Energy = 899_999
+	research := ResearchLevels{ResearchGraviton: 1}
+	result = BuildResearch(overview, levels, research, BuildResearchLabLevels(12, nil, research), 1, false, nil)
+	graviton = findResearch(t, result, ResearchGraviton)
+	if graviton.CanBuild || graviton.Cost.Energy != 900_000 {
+		t.Fatalf("expected level-two graviton research to require 900000 energy, got %+v", graviton)
+	}
+}
+
 func findResearch(t *testing.T, research Research, id int) BuildingItem {
 	t.Helper()
 	for _, item := range research.Items {

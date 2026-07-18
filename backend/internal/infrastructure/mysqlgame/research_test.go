@@ -295,6 +295,47 @@ func TestResearchRepositoryStartResearchSpendFailure(t *testing.T) {
 	}
 }
 
+func TestResearchRepositoryStartsGravitonWithHydratedEnergy(t *testing.T) {
+	now := time.Unix(2_000, 0)
+	runner := &fakeBuildingsRunner{
+		fakeQueryer: fakeQueryer{results: []fakeQueryResult{
+			{rows: fakeRowsFromValues(researchMutationUserRow(0, 0, nil))},
+			{rows: fakeRowsFromValues([]any{128.0, 0})},
+			{rows: fakeRowsFromValues()},
+			{rows: fakeRowsFromValues()},
+			{rows: fakeRowsFromValues(buildingMutationPlanetRowWithFields(map[int]int{domaingame.BuildingResearchLab: 12}, domaingame.PlanetTypePlanet, 60, 200))},
+			{rows: fakeRowsFromValues(terraformerEnergyUserRow(0, 0))},
+			{rows: fakeRowsFromValues(terraformerEnergyPlanetRow(59, 1))},
+			{rows: fakeRowsFromValues()},
+		}},
+		results: []sql.Result{buildingSQLResult{affected: 1}, buildingSQLResult{id: 7}},
+	}
+	repository := NewResearchRepositoryWithRunner(runner, runner, "ogame_", func() time.Time { return now })
+
+	issue, err := repository.startResearch(
+		context.Background(),
+		"`ogame_users`",
+		"`ogame_planets`",
+		"`ogame_queue`",
+		42,
+		99,
+		domaingame.ResearchGraviton,
+		int(now.Unix()),
+	)
+	if err != nil || issue != nil {
+		t.Fatalf("expected hydrated energy to permit graviton research, issue=%+v err=%v", issue, err)
+	}
+	if len(runner.execs) != 2 ||
+		runner.execs[0].args[0] != float64(0) ||
+		runner.execs[0].args[1] != float64(0) ||
+		runner.execs[0].args[2] != float64(0) ||
+		runner.execs[1].args[3] != domaingame.ResearchGraviton ||
+		runner.execs[1].args[4] != 1 ||
+		runner.execs[1].args[6].(int)-runner.execs[1].args[5].(int) != 1 {
+		t.Fatalf("unexpected graviton research writes: %+v", runner.execs)
+	}
+}
+
 func TestResearchRepositoryCancelsResearchAndRefunds(t *testing.T) {
 	now := time.Unix(2_000, 0)
 	runner := &fakeBuildingsRunner{fakeQueryer: fakeQueryer{results: []fakeQueryResult{
@@ -889,6 +930,21 @@ func TestResearchRepositoryValidatesResearchOrders(t *testing.T) {
 	issue, _, duration, err := repository.validateResearchOrder(context.Background(), "`ogame_planets`", user, planet, domaingame.ResearchEnergy, 1, 1)
 	if err != nil || issue != nil || duration <= 0 {
 		t.Fatalf("expected technocrat-adjusted valid order, issue=%+v duration=%d err=%v", issue, duration, err)
+	}
+
+	planet.Levels[domaingame.BuildingResearchLab] = 12
+	planet.Resources = domaingame.Resources{Energy: 300_000}
+	repository = NewResearchRepositoryWithQueryer(&fakeQueryer{results: []fakeQueryResult{
+		{rows: fakeRowsFromValues()},
+	}}, "ogame_", func() time.Time { return now })
+	issue, cost, duration, err := repository.validateResearchOrder(context.Background(), "`ogame_planets`", user, planet, domaingame.ResearchGraviton, 1, 1)
+	if err != nil || issue != nil || cost.Energy != 300_000 || duration != 1 {
+		t.Fatalf("expected sufficient virtual energy to permit graviton research, issue=%+v cost=%+v duration=%d err=%v", issue, cost, duration, err)
+	}
+	planet.Resources.Energy = 299_999
+	issue, _, _, err = repository.validateResearchOrder(context.Background(), "`ogame_planets`", user, planet, domaingame.ResearchGraviton, 1, 1)
+	if err != nil || issue == nil || issue.Code != domaingame.BuildingsIssueNoResources {
+		t.Fatalf("expected insufficient virtual energy to reject graviton research, issue=%+v err=%v", issue, err)
 	}
 }
 

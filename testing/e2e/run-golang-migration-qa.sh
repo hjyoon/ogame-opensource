@@ -115,6 +115,9 @@ if [ "${OGAME_RUN_GO_DOCKER:-1}" = "1" ]; then
     if [ "${OGAME_RUN_RESEARCH_DIFFERENTIAL:-1}" = "1" ]; then
       OGAME_GO_BASE_URL="$GO_BASE_URL" "$SCRIPT_DIR/run-golang-research-differential-e2e.sh"
     fi
+    if [ "${OGAME_RUN_GRAVITON_DIFFERENTIAL:-1}" = "1" ]; then
+      OGAME_GO_BASE_URL="$GO_BASE_URL" "$SCRIPT_DIR/run-golang-graviton-differential-e2e.sh"
+    fi
     if [ "${OGAME_RUN_SHIPYARD_DIFFERENTIAL:-1}" = "1" ]; then
       OGAME_GO_BASE_URL="$GO_BASE_URL" "$SCRIPT_DIR/run-golang-shipyard-defense-differential-e2e.sh"
     fi

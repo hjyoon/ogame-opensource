@@ -24,7 +24,7 @@
     {"method":"OverviewService.RenamePlanet","scope":"game","evidence":"differential","runner":"run-golang-overview-differential-e2e.sh","reports":[".tmp/golang-overview-differential.json"]},
     {"method":"OverviewService.DeletePlanet","scope":"game","evidence":"differential","runner":"run-golang-overview-differential-e2e.sh","reports":[".tmp/golang-overview-differential.json"]},
     {"method":"PaymentService.MutatePayment","scope":"game","evidence":"differential","runner":"run-golang-payment-differential-e2e.sh","reports":[".tmp/golang-payment-differential.json"]},
-    {"method":"ResearchService.MutateResearch","scope":"game","evidence":"differential","runner":"run-golang-research-differential-e2e.sh","reports":[".tmp/golang-research-differential.json"]},
+    {"method":"ResearchService.MutateResearch","scope":"game","evidence":"differential","runner":"run-golang-research-differential-e2e.sh","reports":[".tmp/golang-research-differential.json",".tmp/golang-graviton-differential.json"]},
     {"method":"ResourcesService.UpdateResources","scope":"game","evidence":"differential","runner":"run-golang-resource-differential-e2e.sh","reports":[".tmp/golang-resource-differential.json"]},
     {"method":"ShipyardService.MutateShipyard","scope":"game","evidence":"differential","runner":"run-golang-shipyard-defense-differential-e2e.sh","reports":[".tmp/golang-shipyard-defense-differential.json"]},
     {"method":"LoginAuthenticator.AuthenticateLogin","scope":"public","evidence":"differential","runner":"run-golang-public-account-differential-e2e.sh","reports":[".tmp/golang-public-account-differential.json"]},

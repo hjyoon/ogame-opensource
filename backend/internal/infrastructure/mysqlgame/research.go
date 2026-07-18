@@ -357,6 +357,17 @@ func (r ResearchRepository) startResearch(ctx context.Context, usersTable string
 		return domaingame.BuildingActionIssue(domaingame.BuildingsIssueInvalid), nil
 	}
 	level := user.Research[techID] + 1
+	if cost, ok := domaingame.ResearchCostForLevel(techID, level); ok && cost.Energy > 0 {
+		planet, err = (BuildingsRepository{
+			queryer: r.queryer,
+			execer:  r.execer,
+			prefix:  r.prefix,
+			now:     r.now,
+		}).hydratePlanetEnergy(ctx, usersTable, planetsTable, planet)
+		if err != nil {
+			return nil, err
+		}
+	}
 	issue, cost, duration, err := r.validateResearchOrder(ctx, planetsTable, user, planet, techID, level, config.Speed)
 	if err != nil || issue != nil {
 		return issue, err

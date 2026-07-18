@@ -225,6 +225,49 @@ func TestSQLiteRegisteredAccountCanQueueBuilding(t *testing.T) {
 		t.Fatalf("expected completed SQLite energy research, got level %d", energyResearch)
 	}
 
+	if _, err := db.Exec(
+		"UPDATE `uni1_planets` SET `31` = 12, `4` = 59, prod4 = 1, fields = 71, maxfields = 300, `700` = 1234, `701` = 2345, `702` = 3456, lastpeek = ? WHERE planet_id = ?",
+		time.Now().Unix()+60,
+		account.HomePlanetID,
+	); err != nil {
+		t.Fatal(err)
+	}
+	gravitonResult, err := mysqlgame.NewResearchRepository(db, "uni1_").MutateResearch(context.Background(), appgame.ResearchMutationQuery{
+		PlayerID: account.PlayerID,
+		PlanetID: account.HomePlanetID,
+		Action:   "start",
+		TechID:   domaingame.ResearchGraviton,
+	})
+	if err != nil {
+		t.Fatalf("start SQLite graviton research: %v", err)
+	}
+	if gravitonResult.ActionIssue != nil {
+		t.Fatalf("unexpected SQLite graviton research issue: %s", *gravitonResult.ActionIssue)
+	}
+	var metal, crystal, deuterium float64
+	if err := db.QueryRow(
+		"SELECT `700`, `701`, `702` FROM `uni1_planets` WHERE planet_id = ?",
+		account.HomePlanetID,
+	).Scan(&metal, &crystal, &deuterium); err != nil {
+		t.Fatal(err)
+	}
+	if metal != 1234 || crystal != 2345 || deuterium != 3456 {
+		t.Fatalf("graviton must not spend stored resources, got %.0f/%.0f/%.0f", metal, crystal, deuterium)
+	}
+	if _, err := db.Exec("UPDATE `uni1_queue` SET end = 0 WHERE owner_id = ?", account.PlayerID); err != nil {
+		t.Fatal(err)
+	}
+	if err := mysqlgame.NewResearchRepository(db, "uni1_").FinishDueResearchQueues(context.Background(), int(time.Now().Unix())); err != nil {
+		t.Fatalf("finish SQLite graviton research: %v", err)
+	}
+	var graviton int
+	if err := db.QueryRow("SELECT `199` FROM `uni1_users` WHERE player_id = ?", account.PlayerID).Scan(&graviton); err != nil {
+		t.Fatal(err)
+	}
+	if graviton != 1 {
+		t.Fatalf("expected completed SQLite graviton research, got level %d", graviton)
+	}
+
 	if _, err := db.Exec("UPDATE `uni1_planets` SET `21` = 2, `700` = 1000000, `701` = 1000000, `702` = 1000000 WHERE planet_id = ?", account.HomePlanetID); err != nil {
 		t.Fatal(err)
 	}

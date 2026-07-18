@@ -1011,6 +1011,15 @@ func (r BuildingsRepository) hydrateBuildingEnergy(
 	if !ok || cost.Energy <= 0 {
 		return planet, nil
 	}
+	return r.hydratePlanetEnergy(ctx, usersTable, planetsTable, planet)
+}
+
+func (r BuildingsRepository) hydratePlanetEnergy(
+	ctx context.Context,
+	usersTable string,
+	planetsTable string,
+	planet buildingMutationPlanet,
+) (buildingMutationPlanet, error) {
 	overviewRepository := NewOverviewRepositoryWithRunner(r.queryer, r.execer, r.prefix)
 	overviewRepository.now = r.now
 	user, err := overviewRepository.loadUser(ctx, usersTable, planet.OwnerID)

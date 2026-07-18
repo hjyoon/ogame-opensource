@@ -45,6 +45,34 @@ func TestBuildShipyardKeepsOwnedUnavailableShipsVisible(t *testing.T) {
 	}
 }
 
+func TestBuildShipyardUnlocksDeathstarAfterGravitonResearch(t *testing.T) {
+	overview := Overview{CurrentPlanet: PlanetOverview{
+		Type: PlanetTypePlanet,
+		Resources: Resources{
+			Metal:     5_000_000,
+			Crystal:   4_000_000,
+			Deuterium: 1_000_000,
+		},
+	}}
+	levels := BuildingLevels{BuildingShipyard: 12}
+	research := ResearchLevels{
+		ResearchHyperspaceDrive: 7,
+		ResearchHyperspace:      6,
+	}
+
+	locked := BuildShipyard(overview, levels, research, FleetCounts{}, 1, false, 1000)
+	if hasShipyardItem(locked, FleetDeathstar) {
+		t.Fatalf("deathstar must stay hidden before graviton research: %+v", locked.Items)
+	}
+
+	research[ResearchGraviton] = 1
+	unlocked := BuildShipyard(overview, levels, research, FleetCounts{}, 1, false, 1000)
+	deathstar := shipyardItemByID(t, unlocked, FleetDeathstar)
+	if !deathstar.MeetsRequirement || !deathstar.CanBuild || deathstar.MaxBuild != 1 {
+		t.Fatalf("expected graviton level one to unlock one affordable deathstar, got %+v", deathstar)
+	}
+}
+
 func TestBuildShipyardBusyBlocksConstruction(t *testing.T) {
 	overview := Overview{CurrentPlanet: PlanetOverview{Type: PlanetTypePlanet, Resources: Resources{Metal: 10000, Crystal: 10000}}}
 	shipyard := BuildShipyard(overview, BuildingLevels{BuildingShipyard: 2}, ResearchLevels{ResearchCombustionDrive: 2}, FleetCounts{}, 1, true, 1000)
