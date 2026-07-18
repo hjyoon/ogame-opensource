@@ -2,16 +2,99 @@ package httpdelivery
 
 import (
 	"context"
+	"encoding/json"
 	"fmt"
 	"html"
 	"net/http"
 	"strconv"
 	"strings"
 	"time"
+	_ "time/tzdata"
 
 	appgame "github.com/hjyoon/ogame-opensource/backend/internal/application/game"
 	domaingame "github.com/hjyoon/ogame-opensource/backend/internal/domain/game"
 )
+
+var legacyPrangerBanLocation = func() *time.Location {
+	location, err := time.LoadLocation("Europe/Moscow")
+	if err != nil {
+		return time.FixedZone("Europe/Moscow", 3*60*60)
+	}
+	return location
+}()
+
+type gamePrangerResponse struct {
+	Pranger *gamePrangerSummary `json:"pranger,omitempty"`
+	Error   string              `json:"error,omitempty"`
+}
+
+type gamePrangerSummary struct {
+	Universe     int                        `json:"universe"`
+	From         int                        `json:"from"`
+	HasPrevious  bool                       `json:"hasPrevious"`
+	PreviousFrom int                        `json:"previousFrom"`
+	HasNext      bool                       `json:"hasNext"`
+	NextFrom     int                        `json:"nextFrom"`
+	Entries      []gamePrangerEntryResponse `json:"entries"`
+}
+
+type gamePrangerEntryResponse struct {
+	BanWhen   string `json:"banWhen"`
+	AdminName string `json:"adminName"`
+	UserName  string `json:"userName"`
+	BanUntil  string `json:"banUntil"`
+	Reason    string `json:"reason"`
+}
+
+func (a app) handleGamePranger(w http.ResponseWriter, r *http.Request) {
+	if a.deps.GamePranger == nil {
+		writeGamePrangerError(w, http.StatusServiceUnavailable, "game pranger unavailable")
+		return
+	}
+	pranger, err := a.deps.GamePranger.GetPranger(r.Context(), appgame.PrangerCommand{
+		Universe: a.deps.CurrentUniverseNumber(),
+		From:     legacyPrangerInt(r.URL.Query().Get("from")),
+		Internal: false,
+	})
+	if err != nil {
+		if a.deps.Logger != nil {
+			a.deps.Logger.Error("game pranger unavailable", "error", err.Error())
+		}
+		writeGamePrangerError(w, http.StatusServiceUnavailable, "game pranger unavailable")
+		return
+	}
+	summary := toGamePrangerSummary(pranger)
+	w.Header().Set("Content-Type", "application/json; charset=utf-8")
+	_ = json.NewEncoder(w).Encode(gamePrangerResponse{Pranger: &summary})
+}
+
+func writeGamePrangerError(w http.ResponseWriter, status int, message string) {
+	w.Header().Set("Content-Type", "application/json; charset=utf-8")
+	w.WriteHeader(status)
+	_ = json.NewEncoder(w).Encode(gamePrangerResponse{Error: message})
+}
+
+func toGamePrangerSummary(pranger domaingame.Pranger) gamePrangerSummary {
+	entries := make([]gamePrangerEntryResponse, 0, len(pranger.Entries))
+	for _, entry := range pranger.Entries {
+		entries = append(entries, gamePrangerEntryResponse{
+			BanWhen:   legacyPrangerBanDate(entry.BanWhen),
+			AdminName: entry.AdminName,
+			UserName:  entry.UserName,
+			BanUntil:  legacyPrangerDate(entry.BanUntil),
+			Reason:    entry.Reason,
+		})
+	}
+	return gamePrangerSummary{
+		Universe:     pranger.Universe,
+		From:         pranger.From,
+		HasPrevious:  pranger.HasPrevious(),
+		PreviousFrom: pranger.PreviousFrom(),
+		HasNext:      pranger.HasNext(),
+		NextFrom:     pranger.NextFrom(),
+		Entries:      entries,
+	}
+}
 
 func (a app) handleLegacyPranger(w http.ResponseWriter, r *http.Request) {
 	if a.deps.GamePranger == nil {
@@ -54,7 +137,7 @@ func legacyPrangerHTML(session string, pranger domaingame.Pranger) string {
 	for _, entry := range pranger.Entries {
 		builder.WriteString("        <tr height=\"20\">\n")
 		builder.WriteString("     <th>")
-		builder.WriteString(legacyPrangerDate(entry.BanWhen))
+		builder.WriteString(legacyPrangerBanDate(entry.BanWhen))
 		builder.WriteString(" </th>\n\n")
 		builder.WriteString("          <th>\n")
 		builder.WriteString("       ")
@@ -97,7 +180,14 @@ func legacyPrangerPageURL(session string, internal bool, from int) string {
 }
 
 func legacyPrangerDate(timestamp int64) string {
-	date := time.Unix(timestamp, 0).UTC()
+	return formatLegacyPrangerDate(time.Unix(timestamp, 0).UTC())
+}
+
+func legacyPrangerBanDate(timestamp int64) string {
+	return formatLegacyPrangerDate(time.Unix(timestamp, 0).In(legacyPrangerBanLocation))
+}
+
+func formatLegacyPrangerDate(date time.Time) string {
 	return fmt.Sprintf("%s %s %d %d %d:%02d:%02d",
 		date.Format("Mon"),
 		date.Format("Jan"),

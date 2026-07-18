@@ -332,6 +332,7 @@ func New(deps Dependencies) http.Handler {
 	mux.HandleFunc("/api/game/defense", a.handleGameDefense)
 	mux.HandleFunc("/api/game/technology", getOnly(a.handleGameTechnology))
 	mux.HandleFunc("/api/game/statistics", getOnly(a.handleGameStatistics))
+	mux.HandleFunc("/api/game/pranger", getOnly(a.handleGamePranger))
 	mux.HandleFunc("/api/game/search", getOnly(a.handleGameSearch))
 	mux.HandleFunc("/api/game/buddy", a.handleGameBuddy)
 	mux.HandleFunc("/api/game/notes", a.handleGameNotes)

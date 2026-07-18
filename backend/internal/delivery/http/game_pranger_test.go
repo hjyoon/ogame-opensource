@@ -2,6 +2,7 @@ package httpdelivery
 
 import (
 	"context"
+	"encoding/json"
 	"errors"
 	"net/http"
 	"net/http/httptest"
@@ -29,7 +30,7 @@ func TestLegacyPrangerDirectPathRendersPublicPillory(t *testing.T) {
 	if recorder.Code != http.StatusOK || !strings.Contains(body, "OGame Pillory Universe 7") || !strings.Contains(body, "Ban Date") {
 		t.Fatalf("unexpected pranger response: status=%d body=%s", recorder.Code, body)
 	}
-	if !strings.Contains(body, "Sat Mar 9 2024 16:00:00") || !strings.Contains(body, "Sat Mar 9 2024 17:00:00") {
+	if !strings.Contains(body, "Sat Mar 9 2024 19:00:00") || !strings.Contains(body, "Sat Mar 9 2024 17:00:00") {
 		t.Fatalf("expected legacy date formatting, got %s", body)
 	}
 	if !strings.Contains(body, "Admin &lt;One&gt;") || !strings.Contains(body, "Player &lt;Two&gt;") {
@@ -63,6 +64,54 @@ func TestLegacyPrangerInternalPathUsesSessionPagination(t *testing.T) {
 	}
 }
 
+func TestGamePrangerAPIRendersStructuredPillory(t *testing.T) {
+	usecase := &fakeGamePrangerUseCase{pranger: domaingame.Pranger{
+		Universe: 7,
+		From:     50,
+		Entries: []domaingame.PrangerEntry{{
+			BanWhen:   1710000000,
+			AdminName: "Admin <One>",
+			UserName:  "Player <Two>",
+			BanUntil:  1710003600,
+			Reason:    "Testing",
+		}},
+	}}
+	recorder := httptest.NewRecorder()
+	req := httptest.NewRequest(http.MethodGet, "/api/game/pranger?from=50", nil)
+
+	New(Dependencies{UniverseNumber: 7, GamePranger: usecase}).ServeHTTP(recorder, req)
+
+	var response gamePrangerResponse
+	if err := json.Unmarshal(recorder.Body.Bytes(), &response); err != nil {
+		t.Fatalf("decode pranger response: %v body=%s", err, recorder.Body.String())
+	}
+	if recorder.Code != http.StatusOK || response.Pranger == nil {
+		t.Fatalf("unexpected pranger response: status=%d response=%+v", recorder.Code, response)
+	}
+	if response.Pranger.Universe != 7 || !response.Pranger.HasPrevious || response.Pranger.PreviousFrom != 0 || response.Pranger.HasNext {
+		t.Fatalf("unexpected pagination summary: %+v", response.Pranger)
+	}
+	if len(response.Pranger.Entries) != 1 || response.Pranger.Entries[0].BanWhen != "Sat Mar 9 2024 19:00:00" ||
+		response.Pranger.Entries[0].AdminName != "Admin <One>" || response.Pranger.Entries[0].Reason != "Testing" {
+		t.Fatalf("unexpected mapped entries: %+v", response.Pranger.Entries)
+	}
+	if usecase.command.Universe != 7 || usecase.command.From != 50 || usecase.command.Internal {
+		t.Fatalf("unexpected API command: %+v", usecase.command)
+	}
+}
+
+func TestGamePrangerAPIErrorsStayJSON(t *testing.T) {
+	recorder := httptest.NewRecorder()
+	New(Dependencies{}).ServeHTTP(recorder, httptest.NewRequest(http.MethodGet, "/api/game/pranger", nil))
+	if recorder.Code != http.StatusServiceUnavailable || recorder.Header().Get("Content-Type") != "application/json; charset=utf-8" {
+		t.Fatalf("unexpected missing service response: status=%d type=%q", recorder.Code, recorder.Header().Get("Content-Type"))
+	}
+	var response gamePrangerResponse
+	if err := json.Unmarshal(recorder.Body.Bytes(), &response); err != nil || response.Error != "game pranger unavailable" {
+		t.Fatalf("unexpected JSON error: response=%+v err=%v body=%s", response, err, recorder.Body.String())
+	}
+}
+
 func TestLegacyPrangerGuards(t *testing.T) {
 	recorder := httptest.NewRecorder()
 	New(Dependencies{}).ServeHTTP(recorder, httptest.NewRequest(http.MethodGet, "/game/pranger.php", nil))
@@ -92,6 +141,9 @@ func TestLegacyPrangerHelpers(t *testing.T) {
 	}
 	if got := legacyPrangerDate(0); got != "Thu Jan 1 1970 0:00:00" {
 		t.Fatalf("unexpected epoch date: %s", got)
+	}
+	if got := legacyPrangerBanDate(0); got != "Thu Jan 1 1970 3:00:00" {
+		t.Fatalf("unexpected Moscow epoch date: %s", got)
 	}
 	if got := (Dependencies{}).CurrentUniverseNumber(); got != 1 {
 		t.Fatalf("expected default universe 1, got %d", got)

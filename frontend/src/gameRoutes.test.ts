@@ -5,6 +5,7 @@ import {
   gameFleetTargetPrefillFromSearch,
   gameFleetTargetURL,
   gameGalaxyMissileURL,
+  gameLegacyPrangerURL,
   gameLegacyRouteURL,
   gameMessageComposeURL,
   gamePlanetSwitchURL,
@@ -26,6 +27,7 @@ describe("game route model", () => {
     expect(gameRoutes.map((route) => route.path)).toContain("/game/merchant");
     expect(gameRoutes.map((route) => route.path)).toContain("/game/officers");
     expect(gameRoutes.map((route) => route.path)).toContain("/game/payment");
+    expect(gameRoutes.map((route) => route.path)).toContain("/game/pranger");
     expect(gameRoutes.map((route) => route.path)).toContain("/game/jump-gate");
     expect(gameRoutes.map((route) => route.path)).toContain("/game/mcp-guide");
   });
@@ -59,6 +61,7 @@ describe("game route model", () => {
     expect(normalizeGamePath("/game/index.php?page=sprungtor&session=abc")).toBe("/game/jump-gate");
     expect(normalizeGamePath("/game/index.php?page=notizen&session=abc")).toBe("/game/notes");
     expect(normalizeGamePath("/game/index.php?page=options&session=abc")).toBe("/game/options");
+    expect(normalizeGamePath("/game/index.php?page=pranger&session=abc")).toBe("/game/pranger");
     expect(normalizeGamePath("/game/index.php?page=suche&session=abc")).toBe("/game/search");
     expect(normalizeGamePath("/game/index.php?page=techtree&session=abc")).toBe("/game/technology");
   });
@@ -75,6 +78,7 @@ describe("game route model", () => {
     expect(resolveGameRoute("/game/merchant")).toMatchObject({ key: "merchant", migrated: true });
     expect(resolveGameRoute("/game/officers")).toMatchObject({ key: "officers", migrated: true });
     expect(resolveGameRoute("/game/payment")).toMatchObject({ key: "payment", migrated: true });
+    expect(resolveGameRoute("/game/pranger")).toMatchObject({ key: "pranger", migrated: true });
     expect(resolveGameRoute("/game/research")).toMatchObject({ key: "research", migrated: true });
     expect(resolveGameRoute("/game/shipyard")).toMatchObject({ key: "shipyard", migrated: true });
     expect(resolveGameRoute("/game/fleet")).toMatchObject({ key: "fleet", migrated: true });
@@ -131,7 +135,7 @@ describe("game route model", () => {
     expect(resolveGameRoute("/game/index.php", "?page=sprungtor")).toMatchObject({ key: "jumpGate", migrated: true });
     expect(resolveGameRoute("/game/index.php", "?page=techtreedetails&gid=1")).toMatchObject({ key: "technology", migrated: true });
     expect(resolveGameRoute("/game/ainfo.php", "?allyid=7")).toMatchObject({ key: "alliance", migrated: true });
-    expect(resolveGameRoute("/game/pranger.php")).toMatchObject({ key: "overview", migrated: true });
+    expect(resolveGameRoute("/game/pranger.php")).toMatchObject({ key: "pranger", migrated: true });
     expect(resolveGameRoute("/game/maintenance.php")).toMatchObject({ key: "overview", migrated: true });
   });
 
@@ -214,6 +218,8 @@ describe("game route model", () => {
   test("builds migrated galaxy user action links", () => {
     expect(gameBuddyRequestURL(42, "?session=abc&cp=99&lgn=1")).toBe("/game/buddy?session=abc&cp=99&action=7&buddy_id=42");
     expect(gameMessageComposeURL(42, "?session=abc&cp=99")).toBe("/game/messages?session=abc&cp=99&messageziel=42");
+    expect(gameLegacyPrangerURL("?session=abc&cp=99")).toBe("/game/pranger?session=abc");
+    expect(gameLegacyPrangerURL("?cp=99")).toBe("/game/pranger");
     expect(gameGalaxyMissileURL({ galaxy: 1, system: 2, position: 3 }, 77, 42, "?session=abc&cp=99")).toBe(
       "/game/galaxy?session=abc&cp=99&mode=1&p1=1&p2=2&p3=3&pdd=77&zp=42&galaxy=1&system=2&position=3"
     );

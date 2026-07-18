@@ -6,6 +6,7 @@ import {
   gameFleetTargetURL,
   gameGalaxyMissileURL,
   gameLegacyIndexActionURL,
+  gameLegacyPrangerURL,
   gameLegacyRouteURL,
   gameMenuRouteURL,
   gameMessageComposeURL,
@@ -400,6 +401,29 @@ export type GameStatisticsStatus = {
   authenticated: boolean;
   issues: { code: string; message: string }[];
   statistics?: GameStatistics;
+};
+
+type GamePrangerResponse = {
+  pranger?: GamePranger;
+  error?: string;
+};
+
+type GamePranger = {
+  universe: number;
+  from: number;
+  hasPrevious: boolean;
+  previousFrom: number;
+  hasNext: boolean;
+  nextFrom: number;
+  entries: GamePrangerEntry[];
+};
+
+type GamePrangerEntry = {
+  banWhen: string;
+  adminName: string;
+  userName: string;
+  banUntil: string;
+  reason: string;
 };
 
 export type GameSearchStatus = {
@@ -2874,6 +2898,7 @@ export function LegacyGameOverview({
           <JumpGateTable jumpGate={jumpGate} onSubmit={onJumpGateSubmit} pending={jumpGatePending} />
         ) : null}
         {overview && route.key === "changelog" ? <ChangelogTable /> : null}
+        {overview && route.key === "pranger" ? <PrangerTable /> : null}
         {overview && route.key === "statistics" && !statistics && !statisticsError && !statisticsIssue ? (
           <LegacyMessage tone="neutral" text="Loading statistics..." />
         ) : null}
@@ -3356,6 +3381,100 @@ function LogoutTable({ error, status }: { error: string | null; status: GameLogo
         </tr>
       </tbody>
     </table>
+  );
+}
+
+function PrangerTable() {
+  const from = Math.max(0, Math.trunc(Number(new URLSearchParams(window.location.search).get("from") ?? 0) || 0));
+  const [pranger, setPranger] = React.useState<GamePranger | null>(null);
+  const [error, setError] = React.useState("");
+
+  React.useEffect(() => {
+    const controller = new AbortController();
+    const query = new URLSearchParams({ from: String(from) });
+    setPranger(null);
+    setError("");
+    fetch(`/api/game/pranger?${query.toString()}`, {
+      credentials: "same-origin",
+      signal: controller.signal
+    })
+      .then(async (response) => {
+        const contentType = response.headers.get("Content-Type") ?? "";
+        if (!contentType.toLowerCase().includes("application/json")) {
+          throw new Error(`Pillory returned ${response.status} with an invalid content type.`);
+        }
+        const payload = (await response.json()) as GamePrangerResponse;
+        if (!response.ok || !payload.pranger) {
+          throw new Error(payload.error || `Pillory returned ${response.status}.`);
+        }
+        return payload.pranger;
+      })
+      .then(setPranger)
+      .catch((reason: unknown) => {
+        if (!(reason instanceof DOMException && reason.name === "AbortError")) {
+          setError(reason instanceof Error ? reason.message : String(reason));
+        }
+      });
+    return () => controller.abort();
+  }, [from]);
+
+  if (error) {
+    return <LegacyMessage tone="error" text={error} />;
+  }
+  if (!pranger) {
+    return <LegacyMessage tone="neutral" text="Loading Pillory..." />;
+  }
+
+  const pageURL = (offset: number) => {
+    const query = new URLSearchParams(window.location.search);
+    query.set("from", String(offset));
+    return gameRouteURL("/game/pranger", query.toString());
+  };
+
+  return (
+    <div className="legacy-pranger-page">
+      <LegacyCenter>
+        <h1>OGame Pillory Universe {pranger.universe}</h1>
+        <p>
+          Here is a list of players who have been banned, until when and for what reason.
+          <br />
+          Blocking by the Admin Council and the system is NOT negotiable.
+          <br />
+          Attention! Your message will be processed faster with an automatic subject line.
+        </p>
+        <table border={0} cellPadding={2} cellSpacing={1} className="legacy-pranger-table">
+          <tbody>
+            <tr style={{ height: 20 }}>
+              <td className="c">Ban Date</td>
+              <td className="c">Admin Name</td>
+              <td className="c">Player Name</td>
+              <td className="c">Blocked Until</td>
+              <td className="c">Reason</td>
+            </tr>
+            {pranger.entries.map((entry, index) => (
+              <tr key={`${entry.banWhen}-${entry.userName}-${index}`} style={{ height: 20 }}>
+                <th>{entry.banWhen} </th>
+                <th>{entry.adminName}</th>
+                <th>{entry.userName}</th>
+                <th>{entry.banUntil}</th>
+                <th>{entry.reason}</th>
+              </tr>
+            ))}
+            <tr>
+              <th colSpan={5}>
+                {pranger.hasPrevious ? (
+                  <>
+                    <a href={pageURL(pranger.previousFrom)}>{"<< Previous 50"}</a>
+                    &nbsp;&nbsp;&nbsp;&nbsp;
+                  </>
+                ) : null}
+                {pranger.hasNext ? <a href={pageURL(pranger.nextFrom)}>{"Next 50 >>"}</a> : null}
+              </th>
+            </tr>
+          </tbody>
+        </table>
+      </LegacyCenter>
+    </div>
   );
 }
 
@@ -12347,7 +12466,12 @@ function galaxyPlayerCellHTML(player: GameGalaxyPlayer): string {
   if (player.suffixes.length > 0) {
     html += "(";
     for (const [index, suffix] of player.suffixes.entries()) {
-      html += `${index > 0 ? " " : ""}<span class="${legacyHTMLAttribute(suffix.class)}">${legacyHTMLText(suffix.text)}</span>`;
+      const marker = `<span class="${legacyHTMLAttribute(suffix.class)}">${legacyHTMLText(suffix.text)}</span>`;
+      html += `${index > 0 ? " " : ""}${
+        suffix.text === "b"
+          ? `<a href="${legacyHTMLAttribute(gameLegacyPrangerURL(window.location.search))}">${marker}</a>`
+          : marker
+      }`;
     }
     html += ")\n";
   }

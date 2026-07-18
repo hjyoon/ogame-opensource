@@ -445,6 +445,10 @@ body.legacy-game-body {
   margin: 0.83em 0;
 }
 
+.legacy-pranger-page p {
+  margin: 1em 0;
+}
+
 .legacy-game-shell .compact-buttons {
   white-space: nowrap;
 }

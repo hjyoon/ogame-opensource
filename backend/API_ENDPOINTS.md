@@ -64,6 +64,7 @@ Tools and scopes: [MCP.md](../MCP.md).
 | `GET/POST` | `/api/game/galaxy` | Galaxy, missiles, instant spy/recycle |
 | `GET` | `/api/game/technology` | Technology tree and details |
 | `GET` | `/api/game/statistics` | Rankings: `who`, `type`, `start` |
+| `GET` | `/api/game/pranger` | Pillory entries and pagination |
 | `GET` | `/api/game/search` | Player/alliance search |
 | `GET/POST` | `/api/game/buddy` | Buddy list and requests |
 | `GET/POST` | `/api/game/notes` | Notes CRUD |

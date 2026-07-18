@@ -232,11 +232,26 @@ func TestGalaxyHelpersCoverLegacyEdgeCases(t *testing.T) {
 	if got := galaxyActivityText(100, 200, false, 0); got != "" {
 		t.Fatalf("activity without clock should be empty, got %q", got)
 	}
+	if got := galaxyActivityText(3599, 0, true, 3600); got != "" {
+		t.Fatalf("own activity should be hidden, got %q", got)
+	}
 	if got := galaxyActivityText(4000, 0, false, 3600); got != "(*)" {
 		t.Fatalf("future activity should be active marker, got %q", got)
 	}
+	if got := galaxyActivityText(3600-899, 0, false, 3600); got != "(*)" {
+		t.Fatalf("activity below 15 minutes should use active marker, got %q", got)
+	}
+	if got := galaxyActivityText(3600-900, 0, false, 3600); got != "(15 min)" {
+		t.Fatalf("activity at 15 minutes should use minute marker, got %q", got)
+	}
 	if got := galaxyActivityText(3600-30*60, 0, false, 3600); got != "(30 min)" {
 		t.Fatalf("expected minute activity marker, got %q", got)
+	}
+	if got := galaxyActivityText(3600-3599, 0, false, 3600); got != "(59 min)" {
+		t.Fatalf("activity below one hour should use minute marker, got %q", got)
+	}
+	if got := galaxyActivityText(3600-3600, 0, false, 3600); got != "" {
+		t.Fatalf("activity at one hour should be hidden, got %q", got)
 	}
 	if got := galaxyActivityText(1, 0, false, 3601); got != "" {
 		t.Fatalf("activity older than one hour should be empty, got %q", got)
@@ -376,6 +391,40 @@ func TestGalaxyMissileHelpersCoverLegacyEdgeCases(t *testing.T) {
 	}
 	if status := galaxyPlayerStatus(admin, GalaxyViewer{Score: 8_478_729}, 1000, false); status.Status == "noob" || status.Status == "strong" {
 		t.Fatalf("administrator galaxy status must not show a score protection marker: %+v", status)
+	}
+}
+
+func TestGalaxyPlayerStatusKeepsLegacyRegularSuffixOrder(t *testing.T) {
+	now := int64(604800 * 8)
+	status := galaxyPlayerStatus(
+		GalaxyObjectPlayer{
+			ID:        7,
+			Name:      "combined",
+			Score:     8_000,
+			LastClick: now - 604800*5,
+			Banned:    true,
+			Vacation:  true,
+		},
+		GalaxyViewer{PlayerID: 42, Score: 10_000},
+		now,
+		false,
+	)
+	if status.Status != "vacation" || status.StatusClass != "vacation" {
+		t.Fatalf("vacation should retain final display priority: %+v", status)
+	}
+	want := []GalaxyStatusSuffix{
+		{Text: "i", Class: "inactive"},
+		{Text: "b", Class: "banned"},
+		{Text: "I", Class: "longinactive"},
+		{Text: "V", Class: "vacation"},
+	}
+	if len(status.Suffixes) != len(want) {
+		t.Fatalf("unexpected suffix count: got=%+v want=%+v", status.Suffixes, want)
+	}
+	for index := range want {
+		if status.Suffixes[index] != want[index] {
+			t.Fatalf("unexpected suffix at %d: got=%+v want=%+v", index, status.Suffixes[index], want[index])
+		}
 	}
 }
 

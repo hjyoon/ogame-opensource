@@ -17,6 +17,7 @@ export type GameRouteKey =
   | "alliance"
   | "officers"
   | "payment"
+  | "pranger"
   | "statistics"
   | "search"
   | "messages"
@@ -55,6 +56,7 @@ export const gameRoutes: GameRoute[] = [
   { key: "alliance", label: "Alliance", path: "/game/alliance", migrated: true },
   { key: "officers", label: "Officers Recruitment", path: "/game/officers", migrated: true },
   { key: "payment", label: "Payment", path: "/game/payment", migrated: true },
+  { key: "pranger", label: "Pillory", path: "/game/pranger", migrated: true },
   { key: "statistics", label: "Statistics", path: "/game/statistics", migrated: true },
   { key: "search", label: "Search", path: "/game/search", migrated: true },
   { key: "messages", label: "Messages", path: "/game/messages", migrated: true },
@@ -111,6 +113,7 @@ const legacyPageAliases = new Map<string, string>([
   ["bewerbungen", "/game/alliance"],
   ["trader", "/game/merchant"],
   ["payment", "/game/payment"],
+  ["pranger", "/game/pranger"],
   ["micropayment", "/game/officers"],
   ["statistics", "/game/statistics"],
   ["search", "/game/search"],
@@ -130,7 +133,7 @@ const legacyPageAliases = new Map<string, string>([
 
 const legacyPathAliases = new Map<string, string>([
   ["/game/ainfo.php", "/game/alliance"],
-  ["/game/pranger.php", "/game/overview"],
+  ["/game/pranger.php", "/game/pranger"],
   ["/game/maintenance.php", "/game/overview"]
 ]);
 
@@ -185,6 +188,13 @@ export function gameLegacyIndexActionURL(search: string, page: string, mode: str
   query.set("action", action);
   const encoded = query.toString();
   return encoded ? `/game/index.php?${encoded}` : "/game/index.php";
+}
+
+export function gameLegacyPrangerURL(search: string): string {
+  const source = new URLSearchParams(search);
+  const query = new URLSearchParams();
+  copyQueryValue(source, query, "session");
+  return gameRouteURL("/game/pranger", query.toString());
 }
 
 export function gameMenuRouteURL(path: string, search: string): string {
@@ -248,6 +258,7 @@ const gameRouteQueryKeys = new Map<string, Set<string>>([
   ["/game/galaxy", new Set(["galaxy", "system", "position", "mode", "p1", "p2", "p3", "pdd", "zp"])],
   ["/game/alliance", new Set(["a", "t", "d", "allyid", "u", "sort2"])],
   ["/game/officers", new Set(["buynow", "type", "days"])],
+  ["/game/pranger", new Set(["from"])],
   ["/game/statistics", new Set(["who", "type", "start", "sort_per_member"])],
   ["/game/search", new Set(["searchtext", "type"])],
   ["/game/messages", new Set(["messageziel", "re", "betreff", "dsp", "pm"])],

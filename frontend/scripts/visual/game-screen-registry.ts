@@ -682,6 +682,15 @@ export const gameVisualScreens: GameVisualScreenSpec[] = [
     expectedTexts: ["Use coupon.", "Enter your coupon code here.", "Coupon Code:", "Check coupon"]
   },
   {
+    name: "game-pranger",
+    area: "direct",
+    legacyPage: "pranger",
+    migratedPath: "/game/pranger",
+    legacyReady: "#content table",
+    migratedReady: ".legacy-pranger-table",
+    expectedTexts: ["OGame Pillory Universe", "Ban Date", "Admin Name", "Player Name", "Blocked Until", "Reason"]
+  },
+  {
     name: "game-statistics",
     area: "core",
     legacyPage: "statistics",

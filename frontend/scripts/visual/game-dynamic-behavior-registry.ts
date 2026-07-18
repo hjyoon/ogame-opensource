@@ -731,6 +731,53 @@ export const gameDynamicBehaviorSpecs: GameDynamicBehaviorSpec[] = [
     notes: ["Covers cntchar-style keyup behavior on the buddy request form."]
   },
   {
+    name: "galaxy-banned-status-pillory-link",
+    legacyPage: "galaxy",
+    migratedPath: "/game/galaxy",
+    legacyReady: "#content a[href*='page=pranger'] span.banned",
+    migratedReady: ".legacy-galaxy-table a[href*='/game/pranger'] span.banned",
+    actions: [
+      {
+        type: "click",
+        legacySelector: "#content a[href*='page=pranger'] span.banned",
+        migratedSelector: ".legacy-galaxy-table a[href*='/game/pranger'] span.banned",
+        legacyWaitForSelector: "#content h1",
+        migratedWaitForSelector: "#content .legacy-pranger-table"
+      }
+    ],
+    assertions: [
+      {
+        name: "route-to-pillory",
+        type: "evaluate",
+        expression:
+          "(() => { const url = new URL(window.location.href); return url.pathname === '/game/pranger' || (url.pathname === '/game/index.php' && url.searchParams.get('page') === 'pranger'); })()",
+        expected: "true"
+      },
+      {
+        name: "pillory-title",
+        type: "evaluate",
+        expression: "document.body.innerText.includes('OGame Pillory Universe')",
+        expected: "true"
+      }
+    ],
+    visual: {
+      enabled: true,
+      normalizePageName: "game-pranger",
+      maskSelectors: ["#menu", ".legacy-menu"]
+    },
+    linkAudit: {
+      expected: [
+        {
+          name: "galaxy-banned-pillory-target",
+          target: "/game/pranger",
+          scope: "before",
+          classification: "visual"
+        }
+      ]
+    },
+    notes: ["Covers the clickable b status marker and its authenticated Pillory destination."]
+  },
+  {
     name: "galaxy-planet-hover-tooltip",
     legacyPage: "galaxy",
     migratedPath: "/game/galaxy",
