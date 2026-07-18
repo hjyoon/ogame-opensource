@@ -210,56 +210,54 @@ type GalaxyExtra struct {
 func BuildGalaxy(overview Overview, input GalaxyInput) Galaxy {
 	bounds := normalizeGalaxyBounds(input.Bounds)
 	coordinates := clampGalaxyCoordinates(input.Coordinates, overview.CurrentPlanet.Coordinates, bounds)
-	rows := make([]GalaxyRow, GalaxyPositions)
-	for i := range rows {
-		rows[i] = GalaxyRow{Position: i + 1}
-	}
+	remoteSystem := overview.CurrentPlanet.Coordinates.Galaxy != coordinates.Galaxy || overview.CurrentPlanet.Coordinates.System != coordinates.System
+	notEnoughDeuterium := remoteSystem && input.Viewer.Admin == 0 && overview.CurrentPlanet.Resources.Deuterium < GalaxyDeuteriumCost
+	rows := emptyGalaxyRows()
 
 	moonByPosition := map[int]GalaxyObject{}
 	debrisByPosition := map[int]GalaxyObject{}
 	planets := make([]GalaxyObject, 0, len(input.Objects))
-	for _, object := range input.Objects {
-		if object.Coordinates.Position < 1 || object.Coordinates.Position > GalaxyPositions {
-			continue
+	if !notEnoughDeuterium {
+		for _, object := range input.Objects {
+			if object.Coordinates.Position < 1 || object.Coordinates.Position > GalaxyPositions {
+				continue
+			}
+			switch object.Type {
+			case PlanetTypeMoon, PlanetTypeDestroyedMoon:
+				moonByPosition[object.Coordinates.Position] = object
+			case PlanetTypeDebris:
+				debrisByPosition[object.Coordinates.Position] = object
+			case PlanetTypePlanet, PlanetTypeDestroyedPlanet, PlanetTypeAbandoned:
+				planets = append(planets, object)
+			}
 		}
-		switch object.Type {
-		case PlanetTypeMoon, PlanetTypeDestroyedMoon:
-			moonByPosition[object.Coordinates.Position] = object
-		case PlanetTypeDebris:
-			debrisByPosition[object.Coordinates.Position] = object
-		case PlanetTypePlanet, PlanetTypeDestroyedPlanet, PlanetTypeAbandoned:
-			planets = append(planets, object)
+
+		for _, object := range planets {
+			position := object.Coordinates.Position
+			moonObject, hasMoon := moonByPosition[position]
+			var moon *GalaxyPlanet
+			if hasMoon {
+				builtMoon := buildGalaxyPlanet(moonObject, input.Viewer, input.Now, nil)
+				moon = &builtMoon
+			}
+			planet := buildGalaxyPlanet(object, input.Viewer, input.Now, moon)
+			debrisObject, hasDebris := debrisByPosition[position]
+			var debris *GalaxyDebris
+			if hasDebris {
+				debris = buildGalaxyDebris(debrisObject)
+			}
+			rows[position-1].Planet = &planet
+			rows[position-1].Moon = moon
+			rows[position-1].Debris = debris
+		}
+
+		for position, debrisObject := range debrisByPosition {
+			if rows[position-1].Debris == nil {
+				rows[position-1].Debris = buildGalaxyDebris(debrisObject)
+			}
 		}
 	}
 
-	populated := 0
-	for _, object := range planets {
-		position := object.Coordinates.Position
-		moonObject, hasMoon := moonByPosition[position]
-		var moon *GalaxyPlanet
-		if hasMoon {
-			builtMoon := buildGalaxyPlanet(moonObject, input.Viewer, input.Now, nil)
-			moon = &builtMoon
-		}
-		planet := buildGalaxyPlanet(object, input.Viewer, input.Now, moon)
-		debrisObject, hasDebris := debrisByPosition[position]
-		var debris *GalaxyDebris
-		if hasDebris {
-			debris = buildGalaxyDebris(debrisObject)
-		}
-		rows[position-1].Planet = &planet
-		rows[position-1].Moon = moon
-		rows[position-1].Debris = debris
-		populated++
-	}
-
-	for position, debrisObject := range debrisByPosition {
-		if rows[position-1].Debris == nil {
-			rows[position-1].Debris = buildGalaxyDebris(debrisObject)
-		}
-	}
-
-	remoteSystem := overview.CurrentPlanet.Coordinates.Galaxy != coordinates.Galaxy || overview.CurrentPlanet.Coordinates.System != coordinates.System
 	return Galaxy{
 		Commander:      overview.Commander,
 		CurrentPlanet:  overview.CurrentPlanet,
@@ -267,7 +265,7 @@ func BuildGalaxy(overview Overview, input GalaxyInput) Galaxy {
 		Coordinates:    coordinates,
 		Bounds:         bounds,
 		Rows:           rows,
-		Populated:      populated,
+		Populated:      len(planets),
 		Slots:          input.FleetSlots,
 		Extra: GalaxyExtra{
 			Commander: input.Viewer.Commander,
@@ -277,10 +275,27 @@ func BuildGalaxy(overview Overview, input GalaxyInput) Galaxy {
 			MaxSpy:    input.Viewer.MaxSpy,
 			Slots:     input.FleetSlots,
 		},
-		NotEnoughDeuterium:  remoteSystem && input.Viewer.Admin == 0 && overview.CurrentPlanet.Resources.Deuterium < GalaxyDeuteriumCost,
+		NotEnoughDeuterium:  notEnoughDeuterium,
 		RemoteSystemCostDue: remoteSystem && input.Viewer.Admin == 0,
 		ViewerAllianceID:    input.Viewer.AllianceID,
 	}
+}
+
+func (g *Galaxy) MarkInsufficientDeuterium() {
+	if g == nil {
+		return
+	}
+	g.NotEnoughDeuterium = true
+	g.Rows = emptyGalaxyRows()
+	g.Populated = 0
+}
+
+func emptyGalaxyRows() []GalaxyRow {
+	rows := make([]GalaxyRow, GalaxyPositions)
+	for i := range rows {
+		rows[i] = GalaxyRow{Position: i + 1}
+	}
+	return rows
 }
 
 func normalizeGalaxyBounds(bounds GalaxyBounds) GalaxyBounds {

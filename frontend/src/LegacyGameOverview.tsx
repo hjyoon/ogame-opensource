@@ -11769,24 +11769,39 @@ function GalaxyTable({
       position: galaxy.coordinates.position
     });
   };
+  if (galaxy.notEnoughDeuterium) {
+    return (
+      <center>
+        <br />
+        <br />
+        <br />
+        <table className="legacy-overview-table legacy-galaxy-error-table" width={519}>
+          <tbody>
+            <tr style={{ height: 20 }}>
+              <td className="legacy-c c">
+                <span className="error">Error</span>{" "}
+              </td>
+            </tr>
+            <tr style={{ height: 20 }}>
+              <th>
+                <span className="error">Not enough deuterium!</span>
+              </th>
+            </tr>
+          </tbody>
+        </table>
+        <br />
+        <br />
+        <br />
+        <br />
+      </center>
+    );
+  }
   const showGalaxyMoonDeuterium = galaxy.currentPlanet.type === LegacyPlanetTypeMoon;
   const galaxyInfoHTML = legacyGalaxyInfoHTML(galaxy, showGalaxyMoonDeuterium);
   const hasGalaxyInfo = galaxyInfoHTML !== "";
 
   return (
     <>
-      {galaxy.notEnoughDeuterium ? (
-        <table className="legacy-overview-table legacy-galaxy-error-table" width={569}>
-          <tbody>
-            <tr>
-              <td className="legacy-c c"> Error</td>
-            </tr>
-            <tr>
-              <th>Not enough deuterium!</th>
-            </tr>
-          </tbody>
-        </table>
-      ) : null}
       <form className="legacy-galaxy-form" key={`${galaxy.coordinates.galaxy}:${galaxy.coordinates.system}`} onSubmit={submitCoordinates}>
         <table className="legacy-galaxy-nav-table legacy-header-table" id="t1">
           <tbody>

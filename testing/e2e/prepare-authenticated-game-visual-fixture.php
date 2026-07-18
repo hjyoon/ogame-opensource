@@ -274,7 +274,7 @@ function auth_visual_delete_attached_debris(int $planetId): void
 
 function auth_visual_prepare_galaxy_hover_fixture(array $user, string $password): array
 {
-    global $db_prefix;
+    global $db_prefix, $GlobalUni;
 
     $target = auth_visual_prepare_user('visualhover', $password, USER_TYPE_PLAYER);
     $noobTarget = auth_visual_prepare_user('visualnoob', $password, USER_TYPE_PLAYER);
@@ -403,6 +403,7 @@ function auth_visual_prepare_galaxy_hover_fixture(array $user, string $password)
     return array(
         'galaxy' => $g,
         'system' => $s,
+        'remote_system' => $s < (int)$GlobalUni['systems'] ? $s + 1 : $s - 1,
         'target_position' => 1,
         'viewer_position' => 2,
         'target_player_id' => $targetId,

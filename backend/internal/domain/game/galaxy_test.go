@@ -4,6 +4,7 @@ import "testing"
 
 func TestBuildGalaxyClampsCoordinatesAndRows(t *testing.T) {
 	overview := galaxyOverview(100)
+	overview.CurrentPlanet.Resources.Deuterium = 100
 	galaxy := BuildGalaxy(overview, GalaxyInput{
 		Coordinates: Coordinates{Galaxy: 99, System: -5, Position: 99},
 		Bounds:      GalaxyBounds{Galaxies: 9, Systems: 499},
@@ -25,12 +26,38 @@ func TestBuildGalaxyClampsCoordinatesAndRows(t *testing.T) {
 	if len(galaxy.Rows) != GalaxyPositions || galaxy.Rows[2].Planet == nil || galaxy.Populated != 1 {
 		t.Fatalf("unexpected rows: populated=%d rows=%+v", galaxy.Populated, galaxy.Rows)
 	}
-	if !galaxy.RemoteSystemCostDue || !galaxy.NotEnoughDeuterium {
+	if !galaxy.RemoteSystemCostDue || galaxy.NotEnoughDeuterium {
 		t.Fatalf("expected remote system deuterium warning, got due=%v enough=%v", galaxy.RemoteSystemCostDue, galaxy.NotEnoughDeuterium)
 	}
 	if galaxy.Slots.Max != 6 || !galaxy.Extra.Slots.Admiral {
 		t.Fatalf("unexpected slot summary: %+v extra=%+v", galaxy.Slots, galaxy.Extra)
 	}
+}
+
+func TestBuildGalaxyHidesRemoteSystemWhenDeuteriumIsInsufficient(t *testing.T) {
+	galaxy := BuildGalaxy(galaxyOverview(100), GalaxyInput{
+		Coordinates: Coordinates{Galaxy: 1, System: 3},
+		Bounds:      GalaxyBounds{Galaxies: 9, Systems: 499},
+		Viewer:      GalaxyViewer{PlayerID: 42},
+		Objects: []GalaxyObject{{
+			ID:          200,
+			Name:        "Hidden Target",
+			Type:        PlanetTypePlanet,
+			Coordinates: Coordinates{Galaxy: 1, System: 3, Position: 4},
+		}},
+	})
+
+	if !galaxy.NotEnoughDeuterium || galaxy.Populated != 0 || galaxy.Rows[3].Planet != nil {
+		t.Fatalf("insufficient deuterium exposed remote system rows: %+v", galaxy)
+	}
+	galaxy.Rows[3].Planet = &GalaxyPlanet{ID: 200}
+	galaxy.Populated = 1
+	galaxy.MarkInsufficientDeuterium()
+	if galaxy.Populated != 0 || galaxy.Rows[3].Planet != nil {
+		t.Fatalf("marking insufficient deuterium did not clear rows: %+v", galaxy)
+	}
+	var missing *Galaxy
+	missing.MarkInsufficientDeuterium()
 }
 
 func TestBuildGalaxyUsesLegacyStatusPriority(t *testing.T) {

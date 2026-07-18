@@ -117,10 +117,6 @@ func (r GalaxyRepository) GetGalaxy(ctx context.Context, query appgame.GalaxyQue
 		coordinates.System = overview.CurrentPlanet.Coordinates.System
 	}
 	coordinates = clampCoordinatesForRepository(coordinates, bounds)
-	objects, err := r.loadGalaxyObjects(ctx, planetsTable, usersTable, allyTable, messagesTable, coordinates, viewer)
-	if err != nil {
-		return domaingame.Galaxy{}, err
-	}
 
 	baseMax := research[domaingame.ResearchComputer] + 1
 	maxFleet := baseMax
@@ -128,7 +124,7 @@ func (r GalaxyRepository) GetGalaxy(ctx context.Context, query appgame.GalaxyQue
 		maxFleet += 2
 	}
 
-	galaxy := domaingame.BuildGalaxy(overview, domaingame.GalaxyInput{
+	input := domaingame.GalaxyInput{
 		Coordinates: coordinates,
 		Bounds:      bounds,
 		Viewer:      viewer,
@@ -138,9 +134,17 @@ func (r GalaxyRepository) GetGalaxy(ctx context.Context, query appgame.GalaxyQue
 			BaseMax: baseMax,
 			Admiral: admiral,
 		},
-		Objects: objects,
-		Now:     r.now().Unix(),
-	})
+		Now: r.now().Unix(),
+	}
+	galaxy := domaingame.BuildGalaxy(overview, input)
+	if !galaxy.NotEnoughDeuterium {
+		objects, err := r.loadGalaxyObjects(ctx, planetsTable, usersTable, allyTable, messagesTable, coordinates, viewer)
+		if err != nil {
+			return domaingame.Galaxy{}, err
+		}
+		input.Objects = objects
+		galaxy = domaingame.BuildGalaxy(overview, input)
+	}
 	if err := r.chargeGalaxyRemoteSystemCost(ctx, planetsTable, query.PlayerID, &galaxy); err != nil {
 		return domaingame.Galaxy{}, err
 	}
@@ -305,7 +309,7 @@ func (r GalaxyRepository) chargeGalaxyRemoteSystemCost(ctx context.Context, plan
 		return err
 	}
 	if affected == 0 {
-		galaxy.NotEnoughDeuterium = true
+		galaxy.MarkInsufficientDeuterium()
 		return nil
 	}
 	remaining := galaxy.CurrentPlanet.Resources.Deuterium - domaingame.GalaxyDeuteriumCost

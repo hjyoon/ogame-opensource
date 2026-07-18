@@ -1454,6 +1454,45 @@ export const gameDynamicBehaviorSpecs: GameDynamicBehaviorSpec[] = [
     ]
   },
   {
+    name: "galaxy-remote-system-insufficient-deuterium",
+    fixtureProfile: "low_fuel",
+    legacyPage: "galaxy",
+    legacyQuery: { galaxy: "$fixture.galaxy_hover.galaxy", system: "$fixture.galaxy_hover.remote_system" },
+    migratedPath: "/game/galaxy",
+    migratedQuery: { galaxy: "$fixture.galaxy_hover.galaxy", system: "$fixture.galaxy_hover.remote_system" },
+    legacyReady: "#content table[width='519'] span.error",
+    migratedReady: ".legacy-galaxy-error-table span.error",
+    actions: [],
+    assertions: [
+      {
+        name: "error-message",
+        type: "text",
+        legacySelector: "#content table[width='519']",
+        migratedSelector: ".legacy-galaxy-error-table",
+        compareSides: true,
+        expected: "Error Not enough deuterium!"
+      },
+      {
+        name: "navigation-hidden",
+        type: "count",
+        legacySelector: "#content #t1",
+        migratedSelector: ".legacy-galaxy-nav-table",
+        compareSides: true,
+        expected: "0"
+      },
+      {
+        name: "system-table-hidden",
+        type: "count",
+        legacySelector: "#content table[width='569']",
+        migratedSelector: ".legacy-galaxy-table",
+        compareSides: true,
+        expected: "0"
+      }
+    ],
+    visual: { enabled: true, normalizePageName: "game-galaxy-insufficient-deuterium", maxDiffRatio: 0 },
+    notes: ["Covers legacy remote-system paging behavior: insufficient deuterium renders only the error table and does not expose galaxy rows."]
+  },
+  {
     name: "galaxy-keyboard-system-left",
     legacyPage: "galaxy",
     migratedPath: "/game/galaxy",

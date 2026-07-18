@@ -86,6 +86,75 @@ func TestGalaxyRepositoryChargesRemoteSystemDeuterium(t *testing.T) {
 	if len(call.args) != 5 || call.args[0] != domaingame.GalaxyDeuteriumCost || call.args[2] != 99 || call.args[3] != 42 || call.args[4] != domaingame.GalaxyDeuteriumCost {
 		t.Fatalf("unexpected deuterium update args: %+v", call.args)
 	}
+
+	runner = &fakeGalaxyRunner{
+		fakeQueryer: fakeQueryer{results: append(galaxyReadPrefixResults(now),
+			fakeQueryResult{rows: fakeRowsFromValues()},
+		)},
+		execErrs: []error{errors.New("charge failed")},
+	}
+	repository = NewGalaxyRepositoryWithRunner(runner, runner, "ogame_", func() time.Time { return now })
+	if _, err := repository.GetGalaxy(context.Background(), appgame.GalaxyQuery{
+		PlayerID:    42,
+		Coordinates: domaingame.Coordinates{Galaxy: 1, System: 3},
+	}); err == nil || !strings.Contains(err.Error(), "charge failed") {
+		t.Fatalf("expected remote charge error, got %v", err)
+	}
+}
+
+func TestGalaxyRepositoryDoesNotLoadRemoteSystemWithoutDeuterium(t *testing.T) {
+	now := time.Unix(10_000, 0)
+	results := galaxyReadPrefixResults(now)
+	results[1] = fakeQueryResult{rows: fakeRowsFromValues([]any{
+		99, "Arakis", domaingame.PlanetTypePlanet, 1, 2, 3, 12800, 19, 1, 163, 10000.0, 10000.0, 0.0, 0, 0, 0,
+	})}
+	runner := &fakeGalaxyRunner{fakeQueryer: fakeQueryer{results: append(results,
+		fakeQueryResult{rows: fakeRowsFromValues(
+			galaxyObjectRow(200, "Hidden Target", domaingame.PlanetTypePlanet, 4, now.Unix(), 0, 0, 7, "enemy", 1000, 12, 0, now.Unix(), 0, 0, 0, "", 0, 0, 0),
+		)},
+	)}}
+	repository := NewGalaxyRepositoryWithRunner(runner, runner, "ogame_", func() time.Time { return now })
+
+	galaxy, err := repository.GetGalaxy(context.Background(), appgame.GalaxyQuery{
+		PlayerID:    42,
+		Coordinates: domaingame.Coordinates{Galaxy: 1, System: 3},
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if !galaxy.NotEnoughDeuterium || galaxy.Populated != 0 || galaxy.Rows[3].Planet != nil {
+		t.Fatalf("insufficient deuterium exposed remote system: %+v", galaxy)
+	}
+	if len(runner.calls) != len(results) {
+		t.Fatalf("remote system objects were queried despite insufficient deuterium: calls=%d want=%d", len(runner.calls), len(results))
+	}
+	if len(runner.execCalls) != 0 {
+		t.Fatalf("insufficient deuterium should not be charged: %+v", runner.execCalls)
+	}
+}
+
+func TestGalaxyRepositoryHidesRowsWhenConcurrentChargeLoses(t *testing.T) {
+	now := time.Unix(10_000, 0)
+	runner := &fakeGalaxyRunner{
+		fakeQueryer: fakeQueryer{results: append(galaxyReadPrefixResults(now),
+			fakeQueryResult{rows: fakeRowsFromValues(
+				galaxyObjectRow(200, "Hidden Target", domaingame.PlanetTypePlanet, 4, now.Unix(), 0, 0, 7, "enemy", 1000, 12, 0, now.Unix(), 0, 0, 0, "", 0, 0, 0),
+			)},
+		)},
+		execResults: []sql.Result{galaxySQLResult{rows: 0}},
+	}
+	repository := NewGalaxyRepositoryWithRunner(runner, runner, "ogame_", func() time.Time { return now })
+
+	galaxy, err := repository.GetGalaxy(context.Background(), appgame.GalaxyQuery{
+		PlayerID:    42,
+		Coordinates: domaingame.Coordinates{Galaxy: 1, System: 3},
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if !galaxy.NotEnoughDeuterium || galaxy.Populated != 0 || galaxy.Rows[3].Planet != nil {
+		t.Fatalf("failed concurrent charge exposed remote system: %+v", galaxy)
+	}
 }
 
 func TestGalaxyRepositoryMCPReadsGalaxySystemWithoutRemoteCharge(t *testing.T) {
@@ -114,6 +183,10 @@ func TestGalaxyRepositoryMCPReadsGalaxySystemWithoutRemoteCharge(t *testing.T) {
 	}
 	if _, err := (GalaxyRepository{}).GetMCPGalaxySystem(context.Background(), 42, domainmcp.GalaxySystemCommand{}); err == nil {
 		t.Fatalf("expected missing reader error")
+	}
+	failing := NewGalaxyRepositoryWithQueryer(&fakeQueryer{results: []fakeQueryResult{{err: errors.New("overview failed")}}}, "ogame_", func() time.Time { return now })
+	if _, err := failing.GetMCPGalaxySystem(context.Background(), 42, domainmcp.GalaxySystemCommand{}); err == nil || !strings.Contains(err.Error(), "overview failed") {
+		t.Fatalf("expected MCP galaxy read error, got %v", err)
 	}
 }
 
@@ -253,6 +326,7 @@ func TestGalaxyRepositoryDispatchInstantFleetMapsFleetValidationIssues(t *testin
 	}{
 		{name: "invalid mission", mission: domaingame.FleetMissionTransport, amount: 1, want: "fleet_" + domaingame.FleetIssueInvalidOrder},
 		{name: "spy without probes", mission: domaingame.FleetMissionSpy, amount: 1, want: "fleet_" + domaingame.FleetIssueNoShips},
+		{name: "recycle without recyclers", mission: domaingame.FleetMissionRecycle, amount: 1, want: "fleet_" + domaingame.FleetIssueNoShips},
 	}
 
 	for _, tt := range tests {
@@ -281,6 +355,19 @@ func TestGalaxyRepositoryDispatchInstantFleetMapsFleetValidationIssues(t *testin
 				t.Fatalf("validation issue should not write fleet rows: %+v", runner.execCalls)
 			}
 		})
+	}
+}
+
+func TestGalaxyRepositoryDispatchInstantFleetPropagatesFleetReadError(t *testing.T) {
+	runner := &fakeGalaxyRunner{fakeQueryer: fakeQueryer{results: []fakeQueryResult{{err: errors.New("overview failed")}}}}
+	repository := NewGalaxyRepositoryWithRunner(runner, runner, "ogame_", nil)
+
+	if _, err := repository.DispatchInstantFleet(context.Background(), appgame.GalaxyInstantDispatchQuery{
+		PlayerID: 42,
+		Mission:  domaingame.FleetMissionSpy,
+		Amount:   1,
+	}); err == nil || !strings.Contains(err.Error(), "overview failed") {
+		t.Fatalf("expected fleet read error, got %v", err)
 	}
 }
 
@@ -601,6 +688,11 @@ func TestGalaxyRepositoryLaunchMissilesHandlesLoadAndMutationErrors(t *testing.T
 		wantNilMiss bool
 	}{
 		{
+			name:    "universe query fails",
+			results: []fakeQueryResult{{err: errors.New("universe failed")}},
+			wantErr: "universe failed",
+		},
+		{
 			name:        "origin missing",
 			results:     baseResults(fakeQueryResult{rows: fakeRowsFromValues()}),
 			wantNilMiss: true,
@@ -846,6 +938,11 @@ func TestGalaxyRepositoryLoadersHandleRowsAndScanEdges(t *testing.T) {
 	if _, err := repository.loadGalaxyViewer(context.Background(), "ogame_users", 42); err == nil || !strings.Contains(err.Error(), "viewer rows failed") {
 		t.Fatalf("expected viewer rows error, got %v", err)
 	}
+	queryer = &fakeQueryer{results: []fakeQueryResult{{rows: fakeRowsError(errors.New("viewer empty rows failed"))}}}
+	repository = NewGalaxyRepositoryWithQueryer(queryer, "ogame_", func() time.Time { return now })
+	if _, err := repository.loadGalaxyViewer(context.Background(), "ogame_users", 42); err == nil || !strings.Contains(err.Error(), "viewer empty rows failed") {
+		t.Fatalf("expected empty viewer rows error, got %v", err)
+	}
 
 	queryer = &fakeQueryer{results: []fakeQueryResult{{rows: fakeRowsFromValues([]any{"bad", 0, 0, 0, 1, int64(0)})}}}
 	repository = NewGalaxyRepositoryWithQueryer(queryer, "ogame_", func() time.Time { return now })
@@ -864,6 +961,11 @@ func TestGalaxyRepositoryLoadersHandleRowsAndScanEdges(t *testing.T) {
 	if _, _, _, _, err := repository.loadGalaxyUnits(context.Background(), "ogame_planets", 42, 99); err == nil || !strings.Contains(err.Error(), "units rows failed") {
 		t.Fatalf("expected units rows error, got %v", err)
 	}
+	queryer = &fakeQueryer{results: []fakeQueryResult{{rows: fakeRowsError(errors.New("units empty rows failed"))}}}
+	repository = NewGalaxyRepositoryWithQueryer(queryer, "ogame_", func() time.Time { return now })
+	if _, _, _, _, err := repository.loadGalaxyUnits(context.Background(), "ogame_planets", 42, 99); err == nil || !strings.Contains(err.Error(), "units empty rows failed") {
+		t.Fatalf("expected empty units rows error, got %v", err)
+	}
 
 	queryer = &fakeQueryer{results: []fakeQueryResult{{rows: fakeRowsFromValues([]any{"bad", 2, 3, 4})}}}
 	repository = NewGalaxyRepositoryWithQueryer(queryer, "ogame_", func() time.Time { return now })
@@ -875,6 +977,11 @@ func TestGalaxyRepositoryLoadersHandleRowsAndScanEdges(t *testing.T) {
 	repository = NewGalaxyRepositoryWithQueryer(queryer, "ogame_", func() time.Time { return now })
 	if _, err := repository.loadGalaxyBounds(context.Background(), "ogame_uni"); err == nil || !strings.Contains(err.Error(), "bounds rows failed") {
 		t.Fatalf("expected bounds rows error, got %v", err)
+	}
+	queryer = &fakeQueryer{results: []fakeQueryResult{{rows: fakeRowsError(errors.New("bounds empty rows failed"))}}}
+	repository = NewGalaxyRepositoryWithQueryer(queryer, "ogame_", func() time.Time { return now })
+	if _, err := repository.loadGalaxyBounds(context.Background(), "ogame_uni"); err == nil || !strings.Contains(err.Error(), "bounds empty rows failed") {
+		t.Fatalf("expected empty bounds rows error, got %v", err)
 	}
 
 	queryer = &fakeQueryer{results: []fakeQueryResult{{err: errors.New("bounds query failed")}}}
@@ -905,6 +1012,11 @@ func TestGalaxyRepositoryLoadersHandleRowsAndScanEdges(t *testing.T) {
 	repository = NewGalaxyRepositoryWithQueryer(queryer, "ogame_", func() time.Time { return now })
 	if _, err := repository.loadActiveFleetCount(context.Background(), "ogame_queue", "ogame_fleet", 42); err == nil || !strings.Contains(err.Error(), "active rows failed") {
 		t.Fatalf("expected active rows error, got %v", err)
+	}
+	queryer = &fakeQueryer{results: []fakeQueryResult{{rows: fakeRowsError(errors.New("active empty rows failed"))}}}
+	repository = NewGalaxyRepositoryWithQueryer(queryer, "ogame_", func() time.Time { return now })
+	if _, err := repository.loadActiveFleetCount(context.Background(), "ogame_queue", "ogame_fleet", 42); err == nil || !strings.Contains(err.Error(), "active empty rows failed") {
+		t.Fatalf("expected empty active rows error, got %v", err)
 	}
 
 	queryer = &fakeQueryer{results: []fakeQueryResult{{rows: fakeRowsFromValues()}}}
@@ -953,6 +1065,11 @@ func TestGalaxyRepositoryMissileLoadersAndMutatorsHandleEdges(t *testing.T) {
 	if _, found, err := repository.loadGalaxyMissileOrigin(context.Background(), "ogame_planets", "ogame_users", 42, 99); err != nil || found {
 		t.Fatalf("empty origin should return not found without error, found=%v err=%v", found, err)
 	}
+	queryer = &fakeQueryer{results: []fakeQueryResult{{rows: fakeRowsError(errors.New("origin empty rows failed"))}}}
+	repository = NewGalaxyRepositoryWithQueryer(queryer, "ogame_", func() time.Time { return now })
+	if _, _, err := repository.loadGalaxyMissileOrigin(context.Background(), "ogame_planets", "ogame_users", 42, 99); err == nil || !strings.Contains(err.Error(), "origin empty rows failed") {
+		t.Fatalf("expected empty origin rows error, got %v", err)
+	}
 
 	queryer = &fakeQueryer{results: []fakeQueryResult{{rows: fakeRowsFromValues([]any{"bad"})}}}
 	repository = NewGalaxyRepositoryWithQueryer(queryer, "ogame_", func() time.Time { return now })
@@ -976,11 +1093,21 @@ func TestGalaxyRepositoryMissileLoadersAndMutatorsHandleEdges(t *testing.T) {
 	if _, found, err := repository.loadGalaxyMissileTarget(context.Background(), "ogame_planets", "ogame_users", 77); err != nil || found {
 		t.Fatalf("empty target should return not found without error, found=%v err=%v", found, err)
 	}
+	queryer = &fakeQueryer{results: []fakeQueryResult{{rows: fakeRowsError(errors.New("target empty rows failed"))}}}
+	repository = NewGalaxyRepositoryWithQueryer(queryer, "ogame_", func() time.Time { return now })
+	if _, _, err := repository.loadGalaxyMissileTarget(context.Background(), "ogame_planets", "ogame_users", 77); err == nil || !strings.Contains(err.Error(), "target empty rows failed") {
+		t.Fatalf("expected empty target rows error, got %v", err)
+	}
 
 	queryer = &fakeQueryer{results: []fakeQueryResult{{rows: fakeRowsFromValues([]any{"bad"})}}}
 	repository = NewGalaxyRepositoryWithQueryer(queryer, "ogame_", func() time.Time { return now })
 	if _, _, err := repository.loadGalaxyMissileTarget(context.Background(), "ogame_planets", "ogame_users", 77); err == nil {
 		t.Fatal("expected target scan error")
+	}
+	queryer = &fakeQueryer{results: []fakeQueryResult{{rows: fakeRowsFromValuesWithErr(errors.New("target rows failed"), galaxyMissileTargetRow(77, 7, 1, 4, 5, int64(10000), 0, 0, 0, now.Unix()))}}}
+	repository = NewGalaxyRepositoryWithQueryer(queryer, "ogame_", func() time.Time { return now })
+	if _, _, err := repository.loadGalaxyMissileTarget(context.Background(), "ogame_planets", "ogame_users", 77); err == nil || !strings.Contains(err.Error(), "target rows failed") {
+		t.Fatalf("expected target rows error, got %v", err)
 	}
 
 	runner := &fakeGalaxyRunner{execErrs: []error{errors.New("reserve failed")}}
@@ -1005,6 +1132,11 @@ func TestGalaxyRepositoryMissileLoadersAndMutatorsHandleEdges(t *testing.T) {
 	repository = NewGalaxyRepositoryWithRunner(runner, runner, "ogame_", func() time.Time { return now })
 	if _, err := repository.insertGalaxyMissileFleet(context.Background(), "ogame_fleet", galaxyMissilePlanet{ID: 99, OwnerID: 42}, galaxyMissilePlanet{ID: 77}, 1, 0, 30); err == nil || !strings.Contains(err.Error(), "fleet id unavailable") {
 		t.Fatalf("expected fleet id error, got %v", err)
+	}
+	runner = &fakeGalaxyRunner{execResults: []sql.Result{galaxySQLResultWithLastInsertErr{err: errors.New("fleet id failed")}}}
+	repository = NewGalaxyRepositoryWithRunner(runner, runner, "ogame_", func() time.Time { return now })
+	if _, err := repository.insertGalaxyMissileFleet(context.Background(), "ogame_fleet", galaxyMissilePlanet{ID: 99, OwnerID: 42}, galaxyMissilePlanet{ID: 77}, 1, 0, 30); err == nil || !strings.Contains(err.Error(), "fleet id failed") {
+		t.Fatalf("expected fleet id read error, got %v", err)
 	}
 }
 
@@ -1117,4 +1249,16 @@ func (r galaxySQLResultWithRowsErr) LastInsertId() (int64, error) {
 
 func (r galaxySQLResultWithRowsErr) RowsAffected() (int64, error) {
 	return 0, r.err
+}
+
+type galaxySQLResultWithLastInsertErr struct {
+	err error
+}
+
+func (r galaxySQLResultWithLastInsertErr) LastInsertId() (int64, error) {
+	return 0, r.err
+}
+
+func (r galaxySQLResultWithLastInsertErr) RowsAffected() (int64, error) {
+	return 0, nil
 }

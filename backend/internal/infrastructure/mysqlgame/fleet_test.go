@@ -3601,6 +3601,7 @@ func TestFleetRepositoryFinishDueExpeditionCreatesHoldAndReturn(t *testing.T) {
 		{rows: fakeRowsFromValues(fleetMessageContextTestRow())},
 	}}}
 	repository = NewFleetRepositoryWithRunner(runner, runner, "ogame_", func() time.Time { return time.Unix(2_900, 0) })
+	repository.combatRandom = func(limit int) int { return limit - 1 }
 
 	if err := repository.FinishDueFleetQueues(context.Background(), 2_900); err != nil {
 		t.Fatal(err)
