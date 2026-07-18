@@ -377,7 +377,10 @@ func requirementsMet(requirements map[int]int, buildings BuildingLevels, researc
 }
 
 func (c BuildingCost) enough(resources Resources) bool {
-	return resources.Metal >= c.Metal && resources.Crystal >= c.Crystal && resources.Deuterium >= c.Deuterium && c.Energy <= 0
+	return resources.Metal >= c.Metal &&
+		resources.Crystal >= c.Crystal &&
+		resources.Deuterium >= c.Deuterium &&
+		(c.Energy <= 0 || float64(resources.Energy) >= c.Energy)
 }
 
 func buildAction(level int, nextLevel int, canBuild bool, full bool) string {

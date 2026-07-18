@@ -273,6 +273,43 @@ func TestBuildingsRepositoryEnqueuesBuilding(t *testing.T) {
 	}
 }
 
+func TestBuildingsRepositoryEnqueuesTerraformerWithAvailableEnergy(t *testing.T) {
+	runner := &fakeBuildingsRunner{fakeQueryer: fakeQueryer{results: append(shipyardOverviewResults(),
+		fakeQueryResult{rows: fakeRowsFromValues(buildingMutationUserRow(0, 9_999, map[int]int{domaingame.ResearchEnergy: 12}))},
+		fakeQueryResult{rows: fakeRowsFromValues([]any{2.0, 0})},
+		fakeQueryResult{rows: fakeRowsFromValues(buildingMutationPlanetRowWithResources(
+			map[int]int{domaingame.BuildingNaniteFactory: 1},
+			0,
+			50_000,
+			100_000,
+		))},
+		fakeQueryResult{rows: fakeRowsFromValues()},
+		fakeQueryResult{rows: fakeRowsFromValues(terraformerEnergyUserRow(12, 0))},
+		fakeQueryResult{rows: fakeRowsFromValues(terraformerEnergyPlanetRow(25, 1))},
+	)}, results: []sql.Result{buildingSQLResult{affected: 1}, buildingSQLResult{id: 7}, buildingSQLResult{id: 8}}}
+	repository := NewBuildingsRepositoryWithRunner(runner, runner, "ogame_", func() time.Time { return time.Unix(2_000, 0) })
+
+	outcome, err := repository.MutateBuildings(context.Background(), appgame.BuildingsMutationQuery{
+		PlayerID: 42,
+		PlanetID: 99,
+		Action:   domaingame.BuildingsMutationAdd,
+		TechID:   domaingame.BuildingTerraformer,
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if outcome.ActionIssue != nil {
+		t.Fatalf("unexpected terraformer mutation issue: %+v", outcome.ActionIssue)
+	}
+	if len(runner.execs) != 3 ||
+		runner.execs[0].args[0] != 0.0 ||
+		runner.execs[0].args[1] != 50_000.0 ||
+		runner.execs[0].args[2] != 100_000.0 ||
+		runner.execs[1].args[3] != domaingame.BuildingTerraformer {
+		t.Fatalf("unexpected terraformer enqueue execs: %+v", runner.execs)
+	}
+}
+
 func TestBuildingsRepositoryEnqueuesDemolition(t *testing.T) {
 	runner := &fakeBuildingsRunner{fakeQueryer: fakeQueryer{results: append(shipyardOverviewResults(),
 		fakeQueryResult{rows: fakeRowsFromValues(buildingMutationUserRow(0, 9_999, nil))},
@@ -2058,6 +2095,24 @@ func buildingMutationPlanetRowWithResources(values map[int]int, metal float64, c
 func buildingMutationPlanetRowWithFields(values map[int]int, planetType int, fields int, maxFields int) []any {
 	row := []any{99, 42, planetType, fields, maxFields, 10_000.0, 10_000.0, 10_000.0}
 	return append(row, buildingLevelRow(values)...)
+}
+
+func terraformerEnergyPlanetRow(solarPlantLevel int, solarProductionFactor float64) []any {
+	return []any{
+		99, "Arakis", domaingame.PlanetTypePlanet, 1, 2, 3, 12_800, 19, 1, 163,
+		0.0, 50_000.0, 100_000.0,
+		0, 0, 0,
+		0, 0, 0, solarPlantLevel, 0, 0,
+		0.0, 0.0, 0.0, solarProductionFactor, 0.0, 0.0,
+	}
+}
+
+func terraformerEnergyUserRow(energyResearch int, engineerUntil int64) []any {
+	return []any{
+		"legor", int64(0), 0, 99, 1, 0, 0, 0,
+		0, 1, 0, 0, energyResearch, 0,
+		int64(0), int64(0), engineerUntil, int64(0), int64(0),
+	}
 }
 
 func buildQueueRowValues(row buildQueueRow) []any {

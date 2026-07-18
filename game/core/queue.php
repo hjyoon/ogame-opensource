@@ -293,7 +293,9 @@ function PropagateBuildQueue (int $planet_id, int $from) : void
 
     $speed = $GlobalUni['speed'];
 
-    $planet = LoadPlanetById ( $planet_id );
+    // Queue propagation must include the virtual energy balance used by
+    // Terraformer resource validation.
+    $planet = GetUpdatePlanet ( $planet_id, $from );
     $user = LoadUser ( $planet['owner_id'] );
 
     $result = GetBuildQueue ( $planet_id );

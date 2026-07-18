@@ -121,6 +121,9 @@ if [ "${OGAME_RUN_GO_DOCKER:-1}" = "1" ]; then
     if [ "${OGAME_RUN_BUILDING_ADVANCED_DIFFERENTIAL:-1}" = "1" ]; then
       OGAME_GO_BASE_URL="$GO_BASE_URL" "$SCRIPT_DIR/run-golang-building-advanced-differential-e2e.sh"
     fi
+    if [ "${OGAME_RUN_TERRAFORMER_DIFFERENTIAL:-1}" = "1" ]; then
+      OGAME_GO_BASE_URL="$GO_BASE_URL" "$SCRIPT_DIR/run-golang-terraformer-differential-e2e.sh"
+    fi
     if [ "${OGAME_RUN_DEFENSE_LIMITS_DIFFERENTIAL:-1}" = "1" ]; then
       OGAME_GO_BASE_URL="$GO_BASE_URL" "$SCRIPT_DIR/run-golang-defense-limits-differential-e2e.sh"
     fi

@@ -707,6 +707,12 @@ func (r BuildingsRepository) enqueueBuilding(ctx context.Context, usersTable str
 			return domaingame.BuildingActionIssue(domaingame.BuildingsIssueNoSuchBuilding), nil
 		}
 	}
+	if listID == 1 && !destroy {
+		planet, err = r.hydrateBuildingEnergy(ctx, usersTable, planetsTable, planet, techID, level)
+		if err != nil {
+			return nil, err
+		}
+	}
 
 	issue, cost, duration, err := r.validateBuildingOrder(ctx, queueTable, user, planet, techID, level, destroy, listID == 1, config.Speed)
 	if err != nil || issue != nil {
@@ -801,6 +807,12 @@ func (r BuildingsRepository) startNextBuildQueue(ctx context.Context, planetsTab
 			return err
 		}
 		destroy := row.Destroy != 0
+		if !destroy {
+			planet, err = r.hydrateBuildingEnergy(ctx, usersTable, planetsTable, planet, row.TechID, row.Level)
+			if err != nil {
+				return err
+			}
+		}
 		issue, cost, duration, err := r.validateBuildingOrder(ctx, queueTable, user, planet, row.TechID, row.Level, destroy, true, config.Speed)
 		if err != nil {
 			return err
@@ -984,6 +996,35 @@ func (r BuildingsRepository) loadBuildingMutationPlanet(ctx context.Context, pla
 	for index, id := range ids {
 		planet.Levels[id] = levels[index]
 	}
+	return planet, nil
+}
+
+func (r BuildingsRepository) hydrateBuildingEnergy(
+	ctx context.Context,
+	usersTable string,
+	planetsTable string,
+	planet buildingMutationPlanet,
+	techID int,
+	level int,
+) (buildingMutationPlanet, error) {
+	cost, ok := domaingame.BuildingCostForLevel(techID, level)
+	if !ok || cost.Energy <= 0 {
+		return planet, nil
+	}
+	overviewRepository := NewOverviewRepositoryWithRunner(r.queryer, r.execer, r.prefix)
+	overviewRepository.now = r.now
+	user, err := overviewRepository.loadUser(ctx, usersTable, planet.OwnerID)
+	if err != nil {
+		return buildingMutationPlanet{}, err
+	}
+	overviewPlanet, err := overviewRepository.loadPlanet(ctx, planetsTable, planet.OwnerID, planet.ID, user)
+	if err != nil {
+		return buildingMutationPlanet{}, err
+	}
+	if overviewPlanet.ID == 0 {
+		return buildingMutationPlanet{}, errors.New("building energy planet not found")
+	}
+	planet.Resources.Energy = overviewPlanet.Resources.Energy
 	return planet, nil
 }
 
@@ -1314,5 +1355,8 @@ func (r BuildingsRepository) adjustBuildingStats(ctx context.Context, usersTable
 }
 
 func buildingResourcesEnough(resources domaingame.Resources, cost domaingame.BuildingCost) bool {
-	return resources.Metal >= cost.Metal && resources.Crystal >= cost.Crystal && resources.Deuterium >= cost.Deuterium && cost.Energy <= 0
+	return resources.Metal >= cost.Metal &&
+		resources.Crystal >= cost.Crystal &&
+		resources.Deuterium >= cost.Deuterium &&
+		(cost.Energy <= 0 || float64(resources.Energy) >= cost.Energy)
 }

@@ -5,7 +5,7 @@
     {"method":"AdminService.MutateAdminBotEdit","scope":"game","evidence":"differential","runner":"run-golang-admin-bots-differential-e2e.sh","reports":[".tmp/golang-admin-bots-differential.json"]},
     {"method":"AllianceService.MutateAlliance","scope":"game","evidence":"differential","runner":"run-golang-alliance-differential-e2e.sh","reports":[".tmp/golang-alliance-differential.json"]},
     {"method":"BuddyService.MutateBuddy","scope":"game","evidence":"differential","runner":"run-golang-buddy-differential-e2e.sh","reports":[".tmp/golang-buddy-differential.json"]},
-    {"method":"BuildingsService.MutateBuildings","scope":"game","evidence":"differential","runner":"run-golang-building-differential-e2e.sh","reports":[".tmp/golang-building-differential.json",".tmp/golang-building-advanced-differential.json"]},
+    {"method":"BuildingsService.MutateBuildings","scope":"game","evidence":"differential","runner":"run-golang-building-differential-e2e.sh","reports":[".tmp/golang-building-differential.json",".tmp/golang-building-advanced-differential.json",".tmp/golang-terraformer-differential.json"]},
     {"method":"DefenseService.MutateDefense","scope":"game","evidence":"differential","runner":"run-golang-shipyard-defense-differential-e2e.sh","reports":[".tmp/golang-shipyard-defense-differential.json",".tmp/golang-defense-limits-differential.json"]},
     {"method":"EmpireService.MutateEmpire","scope":"game","evidence":"differential","runner":"run-golang-empire-differential-e2e.sh","reports":[".tmp/golang-empire-differential.json"]},
     {"method":"FleetService.MutateFleetTemplate","scope":"game","evidence":"differential","runner":"run-golang-fleet-template-differential-e2e.sh","reports":[".tmp/golang-fleet-template-differential.json"]},

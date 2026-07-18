@@ -1,6 +1,6 @@
 # Migration Status
 
-Updated: 2026-07-18 KST, branch `hjyoon/golang`.
+Updated: 2026-07-19 KST, branch `hjyoon/golang`.
 
 React/Bun + Go migration tracker. Keep under 4KB; split details by topic.
 
@@ -11,7 +11,7 @@ React/Bun + Go migration tracker. Keep under 4KB; split details by topic.
 - Natural routes and legacy `.php`/`page=` aliases share route manifests.
 - Registration, activation, recovery, login/logout, session expiry, private cookies, IP/ban checks, and `/game` redirects are migrated.
 - `/api/game/*` implements overview, economy and queues, fleet/combat, galaxy, social/account, reports, officers/payment, and Admin/Bot operations.
-- Game mutations preserve math, permissions, persisted effects, reports, and scheduler behavior through PHP/Go differential cases; expedition holds scale with fleet speed.
+- Game mutations preserve math, permissions, persisted effects, reports, and scheduler behavior through PHP/Go differential cases; Terraformer energy/field effects and expedition fleet-speed holds are explicit cases.
 - MCP supports Player, Operator, and Admin tokens with live DB-role checks, role ceilings, confirmed staff actions, scope-authorized sensitive player actions, and an in-game quick guide; visual comparisons exclude the Go-only token section.
 - The Go runtime supports MySQL by default and persistent SQLite as an optional pure-Go mode; see [SQLite](./SQLITE.md).
 - One multi-target `Dockerfile` and one `docker-compose.yml` define the PHP oracle and both Go database modes.

@@ -77,6 +77,31 @@ func TestBuildBuildingsMarksUnavailableWhenResourcesOrFieldsAreMissing(t *testin
 	}
 }
 
+func TestBuildBuildingsUsesAvailableEnergyForTerraformer(t *testing.T) {
+	overview := Overview{CurrentPlanet: PlanetOverview{
+		Type:      PlanetTypePlanet,
+		MaxFields: 163,
+		Resources: Resources{
+			Crystal:   50_000,
+			Deuterium: 100_000,
+			Energy:    1_000,
+		},
+	}}
+	levels := BuildingLevels{BuildingNaniteFactory: 1}
+	research := ResearchLevels{ResearchEnergy: 12}
+
+	terraformer := findBuilding(t, BuildBuildings(overview, levels, research, 1), BuildingTerraformer)
+	if !terraformer.CanBuild {
+		t.Fatalf("expected exact required energy to allow terraformer: %+v", terraformer)
+	}
+
+	overview.CurrentPlanet.Resources.Energy = 999
+	terraformer = findBuilding(t, BuildBuildings(overview, levels, research, 1), BuildingTerraformer)
+	if terraformer.CanBuild {
+		t.Fatalf("expected insufficient energy to block terraformer: %+v", terraformer)
+	}
+}
+
 func TestBuildingMutationHelpersFollowCatalog(t *testing.T) {
 	if NormalizeBuildingsMutationAction(BuildingsMutationAdd) != BuildingsMutationAdd ||
 		NormalizeBuildingsMutationAction(BuildingsMutationDestroy) != BuildingsMutationDestroy ||
