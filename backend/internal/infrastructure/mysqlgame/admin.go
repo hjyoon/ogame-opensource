@@ -2269,8 +2269,6 @@ const (
 	adminCouponPageSize      = 15
 )
 
-var legacyAdminTimeLocation = time.FixedZone("Europe/Moscow", 3*60*60)
-
 func normalizeAdminCouponFrom(from int) int {
 	if from < 0 {
 		return 0
@@ -2468,7 +2466,7 @@ func parseAdminCouponQueueEnd(dayMonth string, hourMinute string, now time.Time)
 	hour, minute := 0, 0
 	_, _ = fmt.Sscanf(dayMonth, "%d.%d", &day, &month)
 	_, _ = fmt.Sscanf(hourMinute, "%d:%d", &hour, &minute)
-	return int(time.Date(now.In(legacyAdminTimeLocation).Year(), time.Month(month), day, hour, minute, 0, 0, legacyAdminTimeLocation).Unix())
+	return int(time.Date(now.In(time.Local).Year(), time.Month(month), day, hour, minute, 0, 0, time.Local).Unix())
 }
 
 func randomCouponCode() (string, error) {

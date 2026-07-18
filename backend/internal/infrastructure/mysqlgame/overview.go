@@ -1758,7 +1758,7 @@ func overviewTechnologyName(techID int) string {
 }
 
 func formatLegacyOverviewTime(now time.Time) string {
-	return now.In(time.FixedZone("MSK", 3*60*60)).Format("Mon Jan 2 15:04:05")
+	return now.In(time.Local).Format("Mon Jan 2 15:04:05")
 }
 
 func scanPlanetOverview(rows Rows, user overviewUser) (domaingame.PlanetOverview, error) {

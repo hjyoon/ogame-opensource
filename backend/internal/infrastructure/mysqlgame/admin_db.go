@@ -12,6 +12,7 @@ import (
 	"slices"
 	"sort"
 	"strings"
+	"time"
 
 	appgame "github.com/hjyoon/ogame-opensource/backend/internal/application/game"
 	domaingame "github.com/hjyoon/ogame-opensource/backend/internal/domain/game"
@@ -83,7 +84,7 @@ func (r AdminRepository) createAdminDatabaseBackup(ctx context.Context) (string,
 	if err := os.MkdirAll(filepath.Join(r.legacyGameDir, "temp"), 0o755); err != nil {
 		return "", err
 	}
-	fileName := "backup_" + r.now().In(legacyAdminTimeLocation).Format("02012006_150405") + ".json"
+	fileName := "backup_" + r.now().In(time.Local).Format("02012006_150405") + ".json"
 	path := filepath.Join(r.legacyGameDir, "temp", fileName)
 	if err := os.WriteFile(path, data, 0o644); err != nil {
 		return "", err

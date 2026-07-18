@@ -9,6 +9,7 @@ import (
 	"strings"
 	"syscall"
 	"time"
+	_ "time/tzdata"
 	"unicode"
 
 	appgame "github.com/hjyoon/ogame-opensource/backend/internal/application/game"
@@ -35,6 +36,10 @@ import (
 func main() {
 	cfg := config.Load()
 	logger := newLogger(cfg.LogLevel)
+	if err := setServerTimezone(cfg.Timezone); err != nil {
+		logger.Error("invalid server timezone", "timezone", cfg.Timezone, "error", err)
+		os.Exit(1)
+	}
 	pools := openDatabasePools(cfg, logger)
 	defer pools.Close(logger)
 	server := &http.Server{
@@ -47,7 +52,7 @@ func main() {
 	defer stop()
 	serverError := make(chan error, 1)
 	go func() {
-		logger.Info("starting ogame go server", "addr", cfg.Addr, "env", cfg.Environment)
+		logger.Info("starting ogame go server", "addr", cfg.Addr, "env", cfg.Environment, "timezone", cfg.Timezone)
 		serverError <- server.ListenAndServe()
 	}()
 
@@ -64,6 +69,15 @@ func main() {
 			logger.Error("ogame go server graceful shutdown failed", "error", err)
 		}
 	}
+}
+
+func setServerTimezone(name string) error {
+	location, err := time.LoadLocation(name)
+	if err != nil {
+		return err
+	}
+	time.Local = location
+	return nil
 }
 
 func buildHandler(cfg config.Config, logger *slog.Logger, pools databasePools) http.Handler {

@@ -246,7 +246,7 @@ func legacyAdminLoginsHTML(session string, rows []domaingame.AdminLoginRow) stri
 }
 
 func legacyAdminDateTime(timestamp int64) string {
-	return time.Unix(timestamp+3*60*60, 0).UTC().Format("2006-01-02 15:04:05")
+	return time.Unix(timestamp, 0).In(time.Local).Format("2006-01-02 15:04:05")
 }
 
 func (a app) handleLegacyAdminLocaPost(w http.ResponseWriter, r *http.Request) {

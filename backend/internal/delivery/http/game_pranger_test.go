@@ -8,12 +8,14 @@ import (
 	"net/http/httptest"
 	"strings"
 	"testing"
+	"time"
 
 	appgame "github.com/hjyoon/ogame-opensource/backend/internal/application/game"
 	domaingame "github.com/hjyoon/ogame-opensource/backend/internal/domain/game"
 )
 
 func TestLegacyPrangerDirectPathRendersPublicPillory(t *testing.T) {
+	usePrangerTestTimezone(t, 3*60*60)
 	usecase := &fakeGamePrangerUseCase{pranger: domaingame.Pranger{
 		Universe: 7,
 		From:     50,
@@ -65,6 +67,7 @@ func TestLegacyPrangerInternalPathUsesSessionPagination(t *testing.T) {
 }
 
 func TestGamePrangerAPIRendersStructuredPillory(t *testing.T) {
+	usePrangerTestTimezone(t, 3*60*60)
 	usecase := &fakeGamePrangerUseCase{pranger: domaingame.Pranger{
 		Universe: 7,
 		From:     50,
@@ -133,6 +136,8 @@ func TestLegacyPrangerGuards(t *testing.T) {
 }
 
 func TestLegacyPrangerHelpers(t *testing.T) {
+	usePrangerTestTimezone(t, 9*60*60)
+
 	if got := legacyPrangerInt("-12"); got != 0 {
 		t.Fatalf("expected negative offset to clamp, got %d", got)
 	}
@@ -142,12 +147,19 @@ func TestLegacyPrangerHelpers(t *testing.T) {
 	if got := legacyPrangerDate(0); got != "Thu Jan 1 1970 0:00:00" {
 		t.Fatalf("unexpected epoch date: %s", got)
 	}
-	if got := legacyPrangerBanDate(0); got != "Thu Jan 1 1970 3:00:00" {
-		t.Fatalf("unexpected Moscow epoch date: %s", got)
+	if got := legacyPrangerBanDate(0); got != "Thu Jan 1 1970 9:00:00" {
+		t.Fatalf("unexpected server-local epoch date: %s", got)
 	}
 	if got := (Dependencies{}).CurrentUniverseNumber(); got != 1 {
 		t.Fatalf("expected default universe 1, got %d", got)
 	}
+}
+
+func usePrangerTestTimezone(t *testing.T, offsetSeconds int) {
+	t.Helper()
+	original := time.Local
+	time.Local = time.FixedZone("test", offsetSeconds)
+	t.Cleanup(func() { time.Local = original })
 }
 
 type fakeGamePrangerUseCase struct {

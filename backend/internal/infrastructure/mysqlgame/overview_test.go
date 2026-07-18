@@ -17,6 +17,7 @@ import (
 )
 
 func TestOverviewRepositoryReadsLegacyOverview(t *testing.T) {
+	useDefaultServerTimezone(t)
 	queryer := &fakeQueryer{results: []fakeQueryResult{
 		{rows: fakeRowsFromValues([]any{"legor", int64(123456), 7, 99, 1, 0, 0, 0, 0, 30, 7, 3, 6, int64(0), int64(0), int64(2000000000), int64(0), int64(2000000000)})},
 		{rows: fakeRowsFromValues([]any{99, "Arakis", 1, 1, 2, 3, 12800, 19, 12, 163, 1234.5, 234.5, 12.0, 0, 1, 2, 1, 1, 0, 3, 0, 2, 1.0, 1.0, 1.0, 1.0, 1.0, 1.0})},
@@ -2437,8 +2438,12 @@ func TestOverviewRepositoryLoadOverviewUnionEventsEdges(t *testing.T) {
 }
 
 func TestFormatLegacyOverviewTimeUsesServerTimezone(t *testing.T) {
+	original := time.Local
+	time.Local = time.FixedZone("test", -4*60*60)
+	t.Cleanup(func() { time.Local = original })
+
 	got := formatLegacyOverviewTime(time.Date(2026, 6, 19, 15, 23, 7, 0, time.UTC))
-	if got != "Fri Jun 19 18:23:07" {
+	if got != "Fri Jun 19 11:23:07" {
 		t.Fatalf("unexpected legacy overview time: %q", got)
 	}
 }

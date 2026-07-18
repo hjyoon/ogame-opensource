@@ -9,19 +9,10 @@ import (
 	"strconv"
 	"strings"
 	"time"
-	_ "time/tzdata"
 
 	appgame "github.com/hjyoon/ogame-opensource/backend/internal/application/game"
 	domaingame "github.com/hjyoon/ogame-opensource/backend/internal/domain/game"
 )
-
-var legacyPrangerBanLocation = func() *time.Location {
-	location, err := time.LoadLocation("Europe/Moscow")
-	if err != nil {
-		return time.FixedZone("Europe/Moscow", 3*60*60)
-	}
-	return location
-}()
 
 type gamePrangerResponse struct {
 	Pranger *gamePrangerSummary `json:"pranger,omitempty"`
@@ -184,7 +175,7 @@ func legacyPrangerDate(timestamp int64) string {
 }
 
 func legacyPrangerBanDate(timestamp int64) string {
-	return formatLegacyPrangerDate(time.Unix(timestamp, 0).In(legacyPrangerBanLocation))
+	return formatLegacyPrangerDate(time.Unix(timestamp, 0).In(time.Local))
 }
 
 func formatLegacyPrangerDate(date time.Time) string {

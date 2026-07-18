@@ -155,6 +155,7 @@ func TestAdminRepositoryBatchesDatabaseBackupRestoreRows(t *testing.T) {
 }
 
 func TestAdminRepositoryMutatesDatabaseBackupCreateRestoreDelete(t *testing.T) {
+	useDefaultServerTimezone(t)
 	root := t.TempDir()
 	runner := &fakeAdminDBRunner{
 		fakeQueryer: fakeQueryer{results: append(adminDBCreateResults(),
