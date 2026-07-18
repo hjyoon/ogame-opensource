@@ -225,7 +225,7 @@ func mcpService(cfg config.Config, logger *slog.Logger, health appsystem.HealthS
 	resourceReadRepository := mysqlgame.NewResourcesReadRepository(db, cfg.UniDBPrefix)
 	premiumRepository := mysqlgame.NewOfficersRepository(db, cfg.UniDBPrefix)
 	searchReadRepository := mysqlgame.NewSearchRepository(db, cfg.UniDBPrefix)
-	galaxyReadRepository := mysqlgame.NewGalaxyReadRepository(db, cfg.UniDBPrefix)
+	galaxyRepository := mysqlgame.NewGalaxyRepository(db, cfg.UniDBPrefix)
 	statisticsReadRepository := mysqlgame.NewStatisticsRepository(db, cfg.UniDBPrefix)
 	allianceReadRepository := mysqlgame.NewAllianceReadRepository(db, cfg.UniDBPrefix)
 	buddyReadRepository := mysqlgame.NewBuddyReadRepository(db, cfg.UniDBPrefix)
@@ -274,7 +274,7 @@ func mcpService(cfg config.Config, logger *slog.Logger, health appsystem.HealthS
 		WithResourceProductionReadRepository(resourceReadRepository).
 		WithPremiumReadRepository(premiumRepository).
 		WithSearchReadRepository(searchReadRepository).
-		WithGalaxyReadRepository(galaxyReadRepository).
+		WithGalaxyReadRepository(galaxyRepository).
 		WithStatisticsReadRepository(statisticsReadRepository).
 		WithAllianceReadRepository(allianceReadRepository).
 		WithBuddyReadRepository(buddyReadRepository).

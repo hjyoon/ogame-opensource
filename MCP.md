@@ -1,6 +1,6 @@
 # MCP Server
 
-Updated: 2026-07-18. Keep this file under 4KB.
+Updated: 2026-07-19. Keep this file under 4KB.
 
 The Go backend exposes MCP to authenticated Players, Operators, and Admins. MCP follows the same Clean Architecture boundaries and reuses game/Admin permission rules.
 
@@ -36,13 +36,15 @@ token:player_id:scope1,scope2;next:7:mcp:read
 
 ## Scopes And Tools
 
-The fully wired server exposes up to 61 tools. Coupon redemption requires both databases; staff tools require the Admin service.
+The server exposes up to 61 tools. Coupons need both databases; staff tools need Admin.
 
 Player scopes are `mcp:read`, `mcp:messages`, `mcp:message_write`, `mcp:notes_write`, `mcp:buddy_write`, `mcp:fleet`, `mcp:fleet_write`, `mcp:queue_write`, `mcp:resources_write`, `mcp:premium_write`, `mcp:merchant_write`, `mcp:planet_write`, `mcp:alliance_write`, `mcp:account_write`, and `mcp:payment_write`.
 
 `mcp:operator` is available only at user type 1+. `mcp:admin` is available only at type 2. Current DB role is checked on issuance, OAuth exchange, tool listing, and every call, so demotion takes effect immediately. An Admin may issue an Operator-only token; its privilege ceiling remains Operator.
 
-Read tools cover access, planets, overview, resources, queues, fleets, officers, search, galaxy, statistics, alliance, buddy, pranger, notes, options, maintenance, merchant, Jump Gate, empire, technology, buildings, research, shipyard, and defense.
+Read tools cover access, planets, overview, resources, queues, fleets, officers, search, statistics, alliance, buddy, pranger, notes, options, maintenance, merchant, Jump Gate, empire, technology, buildings, research, shipyard, and defense.
+
+`get_galaxy_system` also needs `mcp:resources_write`; remote views spend 10 deuterium.
 
 Mutation tools also cover building construction/demolition, research start, planet rename/abandon, Commander fleet templates and cross-planet queues, all player alliance mutations, account settings/identity/vacation/deletion, interplanetary missiles, Galaxy spy/recycle quick actions, and coupon redemption. They call the same Go repositories and transactions as browser actions; game rules are not reimplemented in MCP.
 

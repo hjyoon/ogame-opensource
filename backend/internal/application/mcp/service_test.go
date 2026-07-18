@@ -661,14 +661,26 @@ func TestServiceListsSearchGameToolForReadScope(t *testing.T) {
 	}
 }
 
-func TestServiceListsGalaxySystemToolForReadScope(t *testing.T) {
+func TestServiceListsGalaxySystemToolForReadAndResourceWriteScopes(t *testing.T) {
 	service := NewServiceWithTokenVerifier(fakeHealthProvider{}, fakeTokenVerifier{
 		access: map[string]domainmcp.Access{
-			"read": {Authenticated: true, PlayerID: 42, Scopes: []string{domainmcp.ScopeRead}},
+			"read":   {Authenticated: true, PlayerID: 42, Scopes: []string{domainmcp.ScopeRead}},
+			"galaxy": {Authenticated: true, PlayerID: 42, Scopes: []string{domainmcp.ScopeRead, domainmcp.ScopeResourcesWrite}},
 		},
 	}).WithGalaxyReadRepository(&fakeGalaxyReadRepository{})
 
 	tools, err := service.ListTools(context.Background(), domainmcp.ListToolsCommand{AccessToken: "read"})
+	if err != nil {
+		t.Fatalf("ListTools returned error: %v", err)
+	}
+	readNames := make([]string, 0, len(tools.Tools))
+	for _, tool := range tools.Tools {
+		readNames = append(readNames, tool.Name)
+	}
+	if strings.Join(readNames, ",") != "get_server_health,get_mcp_access" {
+		t.Fatalf("read-only scope exposed a resource-spending galaxy tool: %v", readNames)
+	}
+	tools, err = service.ListTools(context.Background(), domainmcp.ListToolsCommand{AccessToken: "galaxy"})
 	if err != nil {
 		t.Fatalf("ListTools returned error: %v", err)
 	}
@@ -677,7 +689,11 @@ func TestServiceListsGalaxySystemToolForReadScope(t *testing.T) {
 		names = append(names, tool.Name)
 	}
 	if strings.Join(names, ",") != "get_server_health,get_mcp_access,get_galaxy_system" {
-		t.Fatalf("unexpected read galaxy tools: %v", names)
+		t.Fatalf("unexpected galaxy tools: %v", names)
+	}
+	tool := tools.Tools[len(tools.Tools)-1]
+	if tool.Annotations["readOnlyHint"] != false || tool.Annotations["destructiveHint"] != true || tool.Annotations["idempotentHint"] != false {
+		t.Fatalf("galaxy tool annotations do not disclose resource spending: %+v", tool.Annotations)
 	}
 }
 
@@ -1823,10 +1839,13 @@ func TestServiceSearchGameToolRequiresRepositoryReadScopeAndValidArguments(t *te
 
 func TestServiceCallsGalaxySystemTool(t *testing.T) {
 	galaxy := domainmcp.GalaxySystem{
-		PlayerID:    42,
-		PlanetID:    99,
-		Coordinates: domainmcp.Coordinates{Galaxy: 1, System: 2},
-		Bounds:      domainmcp.GalaxyBounds{Galaxies: 9, Systems: 499},
+		PlayerID:           42,
+		PlanetID:           99,
+		Coordinates:        domainmcp.Coordinates{Galaxy: 1, System: 2},
+		Bounds:             domainmcp.GalaxyBounds{Galaxies: 9, Systems: 499},
+		DeuteriumCost:      10,
+		DeuteriumCharged:   true,
+		DeuteriumRemaining: 90,
 		Rows: []domainmcp.GalaxySystemRow{{
 			Position: 4,
 			Planet: &domainmcp.GalaxySystemObject{
@@ -1842,20 +1861,20 @@ func TestServiceCallsGalaxySystemTool(t *testing.T) {
 	repository := &fakeGalaxyReadRepository{result: galaxy}
 	service := NewServiceWithTokenVerifier(fakeHealthProvider{}, fakeTokenVerifier{
 		access: map[string]domainmcp.Access{
-			"read": {Authenticated: true, PlayerID: 42, Scopes: []string{domainmcp.ScopeRead}},
+			"galaxy": {Authenticated: true, PlayerID: 42, Scopes: []string{domainmcp.ScopeRead, domainmcp.ScopeResourcesWrite}},
 		},
 	}).WithGalaxyReadRepository(repository)
 
 	result, err := service.CallTool(context.Background(), domainmcp.CallToolCommand{
 		Name:        "get_galaxy_system",
-		AccessToken: "read",
+		AccessToken: "galaxy",
 		Arguments:   map[string]any{"planetId": "99", "galaxy": 1, "system": 2},
 	})
 	if err != nil {
 		t.Fatalf("CallTool returned error: %v", err)
 	}
 	got := result.StructuredContent.(map[string]any)["galaxySystem"].(domainmcp.GalaxySystem)
-	if result.IsError || got.PlayerID != 42 || len(got.Rows) != 1 || got.Rows[0].Planet.Player.Name != "enemy" {
+	if result.IsError || got.PlayerID != 42 || got.DeuteriumCost != 10 || !got.DeuteriumCharged || got.DeuteriumRemaining != 90 || len(got.Rows) != 1 || got.Rows[0].Planet.Player.Name != "enemy" {
 		t.Fatalf("unexpected galaxy system result: %+v", result)
 	}
 	if repository.playerID != 42 || repository.command.PlanetID != 99 || repository.command.Galaxy != 1 || repository.command.System != 2 {
@@ -1866,15 +1885,18 @@ func TestServiceCallsGalaxySystemTool(t *testing.T) {
 func TestServiceGalaxySystemToolRequiresRepositoryReadScopeAndValidArguments(t *testing.T) {
 	service := NewServiceWithTokenVerifier(fakeHealthProvider{}, fakeTokenVerifier{
 		access: map[string]domainmcp.Access{
-			"read":  {Authenticated: true, PlayerID: 42, Scopes: []string{domainmcp.ScopeRead}},
-			"write": {Authenticated: true, PlayerID: 43, Scopes: []string{domainmcp.ScopeWrite}},
+			"read":      {Authenticated: true, PlayerID: 42, Scopes: []string{domainmcp.ScopeRead}},
+			"resources": {Authenticated: true, PlayerID: 43, Scopes: []string{domainmcp.ScopeResourcesWrite}},
+			"galaxy":    {Authenticated: true, PlayerID: 44, Scopes: []string{domainmcp.ScopeRead, domainmcp.ScopeResourcesWrite}},
 		},
 	})
-	if _, err := service.CallTool(context.Background(), domainmcp.CallToolCommand{Name: "get_galaxy_system", AccessToken: "read"}); err == nil {
+	if _, err := service.CallTool(context.Background(), domainmcp.CallToolCommand{Name: "get_galaxy_system", AccessToken: "galaxy"}); err == nil {
 		t.Fatalf("expected missing galaxy read repository error")
 	}
-	if _, err := service.CallTool(context.Background(), domainmcp.CallToolCommand{Name: "get_galaxy_system", AccessToken: "write"}); !errors.Is(err, domainmcp.ErrForbidden) {
-		t.Fatalf("expected forbidden without read scope, got %v", err)
+	for _, token := range []string{"read", "resources"} {
+		if _, err := service.CallTool(context.Background(), domainmcp.CallToolCommand{Name: "get_galaxy_system", AccessToken: token}); !errors.Is(err, domainmcp.ErrForbidden) {
+			t.Fatalf("expected forbidden without both galaxy scopes for %q, got %v", token, err)
+		}
 	}
 
 	service = service.WithGalaxyReadRepository(&fakeGalaxyReadRepository{})
@@ -1883,13 +1905,13 @@ func TestServiceGalaxySystemToolRequiresRepositoryReadScopeAndValidArguments(t *
 		{"galaxy": -1},
 		{"system": "bad"},
 	} {
-		if _, err := service.CallTool(context.Background(), domainmcp.CallToolCommand{Name: "get_galaxy_system", AccessToken: "read", Arguments: arguments}); !errors.Is(err, domainmcp.ErrInvalidParams) {
+		if _, err := service.CallTool(context.Background(), domainmcp.CallToolCommand{Name: "get_galaxy_system", AccessToken: "galaxy", Arguments: arguments}); !errors.Is(err, domainmcp.ErrInvalidParams) {
 			t.Fatalf("expected invalid params for %+v, got %v", arguments, err)
 		}
 	}
 
 	service = service.WithGalaxyReadRepository(&fakeGalaxyReadRepository{err: errors.New("galaxy down")})
-	if _, err := service.CallTool(context.Background(), domainmcp.CallToolCommand{Name: "get_galaxy_system", AccessToken: "read"}); err == nil || !strings.Contains(err.Error(), "galaxy down") {
+	if _, err := service.CallTool(context.Background(), domainmcp.CallToolCommand{Name: "get_galaxy_system", AccessToken: "galaxy"}); err == nil || !strings.Contains(err.Error(), "galaxy down") {
 		t.Fatalf("expected galaxy repository error, got %v", err)
 	}
 }

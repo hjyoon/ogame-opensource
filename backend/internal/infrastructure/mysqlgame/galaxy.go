@@ -166,6 +166,9 @@ func (r GalaxyRepository) GetMCPGalaxySystem(ctx context.Context, playerID int, 
 	if err != nil {
 		return domainmcp.GalaxySystem{}, err
 	}
+	if galaxy.RemoteSystemCostDue && !galaxy.NotEnoughDeuterium && r.execer == nil {
+		return domainmcp.GalaxySystem{}, errors.New("galaxy remote-system charging unavailable")
+	}
 	rows := make([]domainmcp.GalaxySystemRow, 0, len(galaxy.Rows))
 	for _, row := range galaxy.Rows {
 		rows = append(rows, domainmcp.GalaxySystemRow{
@@ -199,8 +202,18 @@ func (r GalaxyRepository) GetMCPGalaxySystem(ctx context.Context, playerID int, 
 		},
 		NotEnoughDeuterium:  galaxy.NotEnoughDeuterium,
 		RemoteSystemCostDue: galaxy.RemoteSystemCostDue,
+		DeuteriumCost:       galaxyRemoteSystemCost(galaxy),
+		DeuteriumCharged:    galaxy.RemoteSystemCostDue && !galaxy.NotEnoughDeuterium,
+		DeuteriumRemaining:  galaxy.CurrentPlanet.Resources.Deuterium,
 		Rows:                rows,
 	}, nil
+}
+
+func galaxyRemoteSystemCost(galaxy domaingame.Galaxy) int {
+	if galaxy.RemoteSystemCostDue {
+		return domaingame.GalaxyDeuteriumCost
+	}
+	return 0
 }
 
 func mcpGalaxyObject(planet *domaingame.GalaxyPlanet) *domainmcp.GalaxySystemObject {

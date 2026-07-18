@@ -157,22 +157,29 @@ func TestGalaxyRepositoryHidesRowsWhenConcurrentChargeLoses(t *testing.T) {
 	}
 }
 
-func TestGalaxyRepositoryMCPReadsGalaxySystemWithoutRemoteCharge(t *testing.T) {
+func TestGalaxyRepositoryMCPGalaxySystemChargesRemoteLookup(t *testing.T) {
 	now := time.Unix(10_000, 0)
-	queryer := &fakeQueryer{results: append(galaxyReadPrefixResults(now),
-		fakeQueryResult{rows: fakeRowsFromValues(
-			galaxyObjectRow(200, "Target", domaingame.PlanetTypePlanet, 4, now.Unix()-60, 0, 0, 7, "enemy", 1000, 12, 5, now.Unix(), 0, 0, 5, "TAG", 3, 2, 901),
-			galaxyObjectRow(202, "", domaingame.PlanetTypeDebris, 4, 0, 200, 100, 0, "", 0, 0, 0, 0, 0, 0, 0, "", 0, 0, 0),
-		)},
-	)}
-	repository := NewGalaxyRepositoryWithRunner(queryer, nil, "ogame_", func() time.Time { return now })
+	results := func() []fakeQueryResult {
+		return append(galaxyReadPrefixResults(now),
+			fakeQueryResult{rows: fakeRowsFromValues(
+				galaxyObjectRow(200, "Target", domaingame.PlanetTypePlanet, 4, now.Unix()-60, 0, 0, 7, "enemy", 1000, 12, 5, now.Unix(), 0, 0, 5, "TAG", 3, 2, 901),
+				galaxyObjectRow(202, "", domaingame.PlanetTypeDebris, 4, 0, 200, 100, 0, "", 0, 0, 0, 0, 0, 0, 0, "", 0, 0, 0),
+			)},
+		)
+	}
+	runner := &fakeGalaxyRunner{fakeQueryer: fakeQueryer{results: results()}}
+	repository := NewGalaxyRepositoryWithRunner(runner, runner, "ogame_", func() time.Time { return now })
 
 	system, err := repository.GetMCPGalaxySystem(context.Background(), 42, domainmcp.GalaxySystemCommand{Galaxy: 1, System: 3})
 	if err != nil {
 		t.Fatalf("GetMCPGalaxySystem returned error: %v", err)
 	}
-	if system.PlayerID != 42 || system.PlanetID != 99 || system.Coordinates.System != 3 || !system.RemoteSystemCostDue || system.NotEnoughDeuterium {
+	if system.PlayerID != 42 || system.PlanetID != 99 || system.Coordinates.System != 3 || !system.RemoteSystemCostDue || system.NotEnoughDeuterium ||
+		system.DeuteriumCost != domaingame.GalaxyDeuteriumCost || !system.DeuteriumCharged || system.DeuteriumRemaining != 9990 {
 		t.Fatalf("unexpected MCP galaxy summary: %+v", system)
+	}
+	if len(runner.execCalls) != 1 {
+		t.Fatalf("expected MCP remote lookup to charge deuterium once, got %+v", runner.execCalls)
 	}
 	row := system.Rows[3]
 	if row.Planet == nil || row.Planet.Player == nil || row.Planet.Player.Name != "enemy" || !row.Planet.Actions.ViewReport {
@@ -181,6 +188,17 @@ func TestGalaxyRepositoryMCPReadsGalaxySystemWithoutRemoteCharge(t *testing.T) {
 	if row.Debris == nil || !row.Debris.Visible || row.Debris.Harvesters != 1 {
 		t.Fatalf("unexpected MCP debris row: %+v", row.Debris)
 	}
+
+	readOnly := NewGalaxyRepositoryWithRunner(&fakeQueryer{results: results()}, nil, "ogame_", func() time.Time { return now })
+	if _, err := readOnly.GetMCPGalaxySystem(context.Background(), 42, domainmcp.GalaxySystemCommand{Galaxy: 1, System: 3}); err == nil || !strings.Contains(err.Error(), "charging unavailable") {
+		t.Fatalf("expected remote MCP lookup without a writer to fail, got %v", err)
+	}
+	currentSystem := NewGalaxyRepositoryWithRunner(&fakeQueryer{results: append(galaxyReadPrefixResults(now), fakeQueryResult{rows: fakeRowsFromValues()})}, nil, "ogame_", func() time.Time { return now })
+	current, err := currentSystem.GetMCPGalaxySystem(context.Background(), 42, domainmcp.GalaxySystemCommand{})
+	if err != nil || current.DeuteriumCost != 0 || current.DeuteriumCharged || current.DeuteriumRemaining != 10000 {
+		t.Fatalf("current-system MCP lookup should remain free, result=%+v err=%v", current, err)
+	}
+
 	if _, err := (GalaxyRepository{}).GetMCPGalaxySystem(context.Background(), 42, domainmcp.GalaxySystemCommand{}); err == nil {
 		t.Fatalf("expected missing reader error")
 	}

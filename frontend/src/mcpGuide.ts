@@ -25,7 +25,6 @@ export const mcpGuideToolGroups: MCPGuideToolGroup[] = [
       "get_fleet_options",
       "get_officer_status",
       "search_game",
-      "get_galaxy_system",
       "get_statistics",
       "get_alliance_status",
       "get_buddy_status",
@@ -42,6 +41,11 @@ export const mcpGuideToolGroups: MCPGuideToolGroup[] = [
       "get_shipyard_options",
       "get_defense_options"
     ]
+  },
+  {
+    title: "Galaxy exploration",
+    scopes: "mcp:read + mcp:resources_write",
+    tools: ["get_galaxy_system"]
   },
   {
     title: "Messages and reports",

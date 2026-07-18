@@ -985,7 +985,7 @@ func (s Service) ListTools(ctx context.Context, command domainmcp.ListToolsComma
 		if s.searchRead != nil {
 			tools = append(tools, searchGameTool())
 		}
-		if s.galaxyRead != nil {
+		if s.galaxyRead != nil && access.HasScope(domainmcp.ScopeResourcesWrite) {
 			tools = append(tools, galaxySystemTool())
 		}
 		if s.statisticsRead != nil {
@@ -1252,6 +1252,9 @@ func (s Service) CallTool(ctx context.Context, command domainmcp.CallToolCommand
 		access, err := s.authorize(ctx, command.AccessToken, domainmcp.ScopeRead)
 		if err != nil {
 			return domainmcp.ToolCallResult{}, err
+		}
+		if !access.HasScope(domainmcp.ScopeResourcesWrite) {
+			return domainmcp.ToolCallResult{}, domainmcp.ErrForbidden
 		}
 		audit.PlayerID = access.PlayerID
 		audit.Scopes = access.Scopes
@@ -5531,7 +5534,7 @@ func galaxySystemTool() domainmcp.Tool {
 	return domainmcp.Tool{
 		Name:        "get_galaxy_system",
 		Title:       "Get Galaxy System",
-		Description: "Return a read-only galaxy system view. Unlike the legacy page, MCP read mode does not charge remote-system deuterium.",
+		Description: "Explore a galaxy system using the authenticated planet context. A non-Admin remote-system lookup atomically spends 10 deuterium, matching the browser game.",
 		InputSchema: map[string]any{
 			"type": "object",
 			"properties": map[string]any{
@@ -5567,17 +5570,20 @@ func galaxySystemTool() domainmcp.Tool {
 						"extra":               map[string]any{"type": "object"},
 						"notEnoughDeuterium":  map[string]any{"type": "boolean"},
 						"remoteSystemCostDue": map[string]any{"type": "boolean"},
+						"deuteriumCost":       map[string]any{"type": "integer"},
+						"deuteriumCharged":    map[string]any{"type": "boolean"},
+						"deuteriumRemaining":  map[string]any{"type": "number"},
 						"rows":                map[string]any{"type": "array", "items": map[string]any{"type": "object"}},
 					},
-					"required": []string{"playerId", "planetId", "coordinates", "bounds", "populated", "slots", "extra", "notEnoughDeuterium", "remoteSystemCostDue", "rows"},
+					"required": []string{"playerId", "planetId", "coordinates", "bounds", "populated", "slots", "extra", "notEnoughDeuterium", "remoteSystemCostDue", "deuteriumCost", "deuteriumCharged", "deuteriumRemaining", "rows"},
 				},
 			},
 			"required": []string{"galaxySystem"},
 		},
 		Annotations: map[string]any{
-			"readOnlyHint":    true,
-			"destructiveHint": false,
-			"idempotentHint":  true,
+			"readOnlyHint":    false,
+			"destructiveHint": true,
+			"idempotentHint":  false,
 		},
 	}
 }

@@ -367,6 +367,7 @@ try {
   const authedToolsBody = parseJSON(authedTools);
   const mutatePlanetProperties = (authedToolsBody.result?.tools ?? []).find((tool) => tool.name === "mutate_planet")?.inputSchema?.properties ?? {};
   const accountOptionsProperties = (authedToolsBody.result?.tools ?? []).find((tool) => tool.name === "update_account_options")?.inputSchema?.properties ?? {};
+  const galaxySystemDefinition = (authedToolsBody.result?.tools ?? []).find((tool) => tool.name === "get_galaxy_system");
   const accessTool = await mcpJSONRPC("tools/call", { name: "get_mcp_access", arguments: {} }, { id: 21, headers: authHeaders });
   const accessToolBody = parseJSON(accessTool);
   const planetsTool = await mcpJSONRPC("tools/call", { name: "list_planets", arguments: {} }, { id: 22, headers: authHeaders });
@@ -389,6 +390,16 @@ try {
   const searchGameToolBody = parseJSON(searchGameTool);
   const galaxySystemTool = await mcpJSONRPC("tools/call", { name: "get_galaxy_system", arguments: {} }, { id: 43, headers: authHeaders });
   const galaxySystemToolBody = parseJSON(galaxySystemTool);
+  const currentGalaxySystem = galaxySystemToolBody.result?.structuredContent?.galaxySystem ?? {};
+  const currentGalaxy = Number(currentGalaxySystem.coordinates?.galaxy ?? 1);
+  const currentSystem = Number(currentGalaxySystem.coordinates?.system ?? 1);
+  const maxSystem = Number(currentGalaxySystem.bounds?.systems ?? 499);
+  const remoteSystem = currentSystem < maxSystem ? currentSystem + 1 : Math.max(1, currentSystem - 1);
+  const remoteGalaxySystemTool = await mcpJSONRPC("tools/call", {
+    name: "get_galaxy_system",
+    arguments: { planetId: Number(currentGalaxySystem.planetId ?? 0), galaxy: currentGalaxy, system: remoteSystem }
+  }, { id: 84, headers: authHeaders });
+  const remoteGalaxySystemToolBody = parseJSON(remoteGalaxySystemTool);
   const statisticsTool = await mcpJSONRPC("tools/call", { name: "get_statistics", arguments: { who: "player", type: "resources" } }, { id: 44, headers: authHeaders });
   const statisticsToolBody = parseJSON(statisticsTool);
   const allianceStatusTool = await mcpJSONRPC("tools/call", { name: "get_alliance_status", arguments: {} }, { id: 53, headers: authHeaders });
@@ -633,6 +644,7 @@ try {
         authedToolNames
       }),
       check(!Object.hasOwn(mutatePlanetProperties, "password") && !Object.hasOwn(accountOptionsProperties, "oldPassword") && Object.hasOwn(accountOptionsProperties, "newPassword"), "sensitive MCP mutations use bearer authorization without current-password inputs", { mutatePlanetProperties, accountOptionsProperties }),
+      check(galaxySystemDefinition?.annotations?.readOnlyHint === false && galaxySystemDefinition?.annotations?.destructiveHint === true && galaxySystemDefinition?.annotations?.idempotentHint === false, "get_galaxy_system advertises its remote-system resource cost", galaxySystemDefinition ?? {}),
       check(accessTool.status === 200 && Number(accessToolBody.result?.structuredContent?.playerId ?? 0) === login.playerID, "get_mcp_access returns bearer player id", accessToolBody.result ?? {}),
       check((accessToolBody.result?.structuredContent?.scopes ?? []).includes("mcp:read"), "get_mcp_access returns bearer scopes", accessToolBody.result?.structuredContent ?? {}),
       check(planetsTool.status === 200 && (planetsToolBody.result?.structuredContent?.planets ?? []).length > 0, "list_planets returns at least one planet", planetsToolBody.result ?? {}),
@@ -644,7 +656,10 @@ try {
       check(fleetOptionsTool.status === 200 && Number(fleetOptionsToolBody.result?.structuredContent?.fleetOptions?.playerId ?? 0) === login.playerID && Array.isArray(fleetOptionsToolBody.result?.structuredContent?.fleetOptions?.ships), "get_fleet_options returns read-only legacy fleet screen state", fleetOptionsToolBody.result ?? {}),
       check(officerStatusTool.status === 200 && Number(officerStatusToolBody.result?.structuredContent?.officerStatus?.playerId ?? 0) === login.playerID && Array.isArray(officerStatusToolBody.result?.structuredContent?.officerStatus?.officers), "get_officer_status returns current officer rows and Dark Matter balances", officerStatusToolBody.result ?? {}),
       check(searchGameTool.status === 200 && Number(searchGameToolBody.result?.structuredContent?.search?.playerId ?? 0) === login.playerID && Array.isArray(searchGameToolBody.result?.structuredContent?.search?.players), "search_game returns current player search results", searchGameToolBody.result ?? {}),
-      check(galaxySystemTool.status === 200 && Number(galaxySystemToolBody.result?.structuredContent?.galaxySystem?.playerId ?? 0) === login.playerID && Array.isArray(galaxySystemToolBody.result?.structuredContent?.galaxySystem?.rows), "get_galaxy_system returns current galaxy rows without mutation", galaxySystemToolBody.result ?? {}),
+      check(galaxySystemTool.status === 200 && Number(galaxySystemToolBody.result?.structuredContent?.galaxySystem?.playerId ?? 0) === login.playerID && Number(galaxySystemToolBody.result?.structuredContent?.galaxySystem?.deuteriumCost ?? -1) === 0 && galaxySystemToolBody.result?.structuredContent?.galaxySystem?.deuteriumCharged === false && Array.isArray(galaxySystemToolBody.result?.structuredContent?.galaxySystem?.rows), "get_galaxy_system keeps the current-system lookup free and reports charging metadata", galaxySystemToolBody.result ?? {}),
+      check(remoteGalaxySystemTool.status === 200 && (currentRole === "admin"
+        ? Number(remoteGalaxySystemToolBody.result?.structuredContent?.galaxySystem?.deuteriumCost ?? -1) === 0 && remoteGalaxySystemToolBody.result?.structuredContent?.galaxySystem?.deuteriumCharged === false
+        : Number(remoteGalaxySystemToolBody.result?.structuredContent?.galaxySystem?.deuteriumCost ?? -1) === 10 && remoteGalaxySystemToolBody.result?.structuredContent?.galaxySystem?.deuteriumCharged === true), "get_galaxy_system applies the legacy remote-system deuterium charge for non-Admin users", remoteGalaxySystemToolBody.result ?? {}),
       check(statisticsTool.status === 200 && Number(statisticsToolBody.result?.structuredContent?.statistics?.playerId ?? 0) === login.playerID && Array.isArray(statisticsToolBody.result?.structuredContent?.statistics?.rows), "get_statistics returns current legacy ranking rows", statisticsToolBody.result ?? {}),
       check(allianceStatusTool.status === 200 && Number(allianceStatusToolBody.result?.structuredContent?.allianceStatus?.playerId ?? 0) === login.playerID && typeof allianceStatusToolBody.result?.structuredContent?.allianceStatus?.view === "string", "get_alliance_status returns read-only legacy alliance state", allianceStatusToolBody.result ?? {}),
       check(buddyStatusTool.status === 200 && Number(buddyStatusToolBody.result?.structuredContent?.buddyStatus?.playerId ?? 0) === login.playerID && Array.isArray(buddyStatusToolBody.result?.structuredContent?.buddyStatus?.rows), "get_buddy_status returns read-only legacy buddy state", buddyStatusToolBody.result ?? {}),

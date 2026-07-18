@@ -761,6 +761,9 @@ type GalaxySystem struct {
 	Extra               GalaxySystemExtra `json:"extra"`
 	NotEnoughDeuterium  bool              `json:"notEnoughDeuterium"`
 	RemoteSystemCostDue bool              `json:"remoteSystemCostDue"`
+	DeuteriumCost       int               `json:"deuteriumCost"`
+	DeuteriumCharged    bool              `json:"deuteriumCharged"`
+	DeuteriumRemaining  float64           `json:"deuteriumRemaining"`
 	Rows                []GalaxySystemRow `json:"rows"`
 }
 
