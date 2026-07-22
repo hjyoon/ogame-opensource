@@ -134,6 +134,15 @@ func (r ShipyardRepository) PreviewMCPEnqueueShipyardOrder(ctx context.Context, 
 		}
 		result.Amount = clampDefenseShipyardAmount(item.ID, result.Amount, state.levels, state.defense, state.queueRows)
 		result.Issue = mcpBuildingsActionIssue(shipyardPreviewOrderIssue(state, item, result.Amount))
+		if result.Issue == nil && result.Amount > 0 {
+			now := int(r.currentTime().Unix())
+			startsAt := projectedShipyardQueueEnd(state.queueRows, now)
+			result.TotalDurationSeconds = result.DurationSeconds * result.Amount
+			result.StartsAt = int64(startsAt)
+			result.FinishesAt = int64(startsAt + result.TotalDurationSeconds)
+			result.RemainingSeconds = int(result.FinishesAt - int64(now))
+			result.Status = "preview"
+		}
 		return result, nil
 	}
 	result.Issue = mcpBuildingsActionIssue(domaingame.BuildingActionIssue(domaingame.BuildingsIssueInvalid))
@@ -173,7 +182,34 @@ func (r ShipyardRepository) EnqueueMCPShipyardOrder(ctx context.Context, playerI
 	}
 	result.Issue = mcpBuildingsActionIssue(issue)
 	result.Executed = result.Issue == nil
+	if result.Executed {
+		now := r.currentTime().Unix()
+		if result.StartsAt > now {
+			result.Status = "queued"
+		} else {
+			result.Status = "running"
+		}
+	}
 	return result, nil
+}
+
+func projectedShipyardQueueEnd(tasks []buildingQueueTask, now int) int {
+	latest := now
+	for _, task := range tasks {
+		unitDuration := task.End - task.Start
+		if unitDuration < 1 {
+			unitDuration = 1
+		}
+		amount := task.Level
+		if amount < 1 {
+			amount = 1
+		}
+		end := task.Start + unitDuration*amount
+		if end > latest {
+			latest = end
+		}
+	}
+	return latest
 }
 
 func (r ShipyardRepository) mutateShipyardOrders(ctx context.Context, playerID int, planetID int, orders map[int]int, kind shipyardOrderKind) (*domaingame.BuildingsActionIssue, error) {

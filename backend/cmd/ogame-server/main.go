@@ -42,6 +42,12 @@ func main() {
 	}
 	pools := openDatabasePools(cfg, logger)
 	defer pools.Close(logger)
+	queueWorkerContext, stopQueueWorker := context.WithCancel(context.Background())
+	queueWorkerDone := startDueQueueWorker(queueWorkerContext, cfg, logger, pools)
+	defer func() {
+		stopQueueWorker()
+		<-queueWorkerDone
+	}()
 	server := &http.Server{
 		Addr:              cfg.Addr,
 		Handler:           buildHandler(cfg, logger, pools),
@@ -69,6 +75,37 @@ func main() {
 			logger.Error("ogame go server graceful shutdown failed", "error", err)
 		}
 	}
+}
+
+func startDueQueueWorker(ctx context.Context, cfg config.Config, logger *slog.Logger, pools databasePools) <-chan struct{} {
+	done := make(chan struct{})
+	interval := time.Duration(cfg.QueuePollIntervalMS) * time.Millisecond
+	if pools.universe == nil || interval <= 0 {
+		close(done)
+		return done
+	}
+	settler := mysqlgame.NewRuntimeQueueSettler(pools.universe, cfg.UniDBPrefix)
+	go func() {
+		defer close(done)
+		settle := func() {
+			if err := settler.FinishDueQueues(ctx, int(time.Now().Unix())); err != nil && ctx.Err() == nil {
+				logger.Error("due queue settlement failed", "universe", cfg.UniNumber, "error", err)
+			}
+		}
+		settle()
+		ticker := time.NewTicker(interval)
+		defer ticker.Stop()
+		for {
+			select {
+			case <-ctx.Done():
+				return
+			case <-ticker.C:
+				settle()
+			}
+		}
+	}()
+	logger.Info("due queue worker enabled", "universe", cfg.UniNumber, "interval_ms", cfg.QueuePollIntervalMS)
+	return done
 }
 
 func setServerTimezone(name string) error {

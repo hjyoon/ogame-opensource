@@ -5,6 +5,7 @@ import (
 	"errors"
 	"strings"
 	"testing"
+	"time"
 
 	appgame "github.com/hjyoon/ogame-opensource/backend/internal/application/game"
 	domaingame "github.com/hjyoon/ogame-opensource/backend/internal/domain/game"
@@ -23,6 +24,8 @@ type fakePlayerActions struct {
 	missileQuery  appgame.GalaxyMissileLaunchQuery
 	dispatchQuery appgame.GalaxyInstantDispatchQuery
 	paymentQuery  appgame.PaymentMutationQuery
+	buildingIssue *domaingame.BuildingsActionIssue
+	researchIssue *domaingame.BuildingsActionIssue
 	fleet         domaingame.Fleet
 	options       domaingame.Options
 	empire        domaingame.Empire
@@ -40,12 +43,12 @@ func (f *fakePlayerActions) methodErr(name string) error {
 
 func (f *fakePlayerActions) MutateBuildings(_ context.Context, query appgame.BuildingsMutationQuery) (appgame.BuildingsMutationOutcome, error) {
 	f.buildingQuery = query
-	return appgame.BuildingsMutationOutcome{ActionIssue: &domaingame.BuildingsActionIssue{Code: "queued", Message: "queued"}}, f.methodErr("building")
+	return appgame.BuildingsMutationOutcome{ActionIssue: f.buildingIssue}, f.methodErr("building")
 }
 
 func (f *fakePlayerActions) MutateResearch(_ context.Context, query appgame.ResearchMutationQuery) (appgame.ResearchMutationOutcome, error) {
 	f.researchQuery = query
-	return appgame.ResearchMutationOutcome{ActionIssue: &domaingame.BuildingsActionIssue{Code: "queued", Message: "queued"}}, f.methodErr("research")
+	return appgame.ResearchMutationOutcome{ActionIssue: f.researchIssue}, f.methodErr("research")
 }
 
 func (f *fakePlayerActions) RenamePlanet(_ context.Context, query appgame.OverviewRenameQuery) (domaingame.Overview, error) {
@@ -142,7 +145,14 @@ func playerActionsFixture() (*fakePlayerActions, *fakeOptionsMailer, Service) {
 	service := NewServiceWithTokenVerifier(fakeHealthProvider{}, fakeTokenVerifier{access: map[string]domainmcp.Access{"player": access}}).WithPlayerActions(PlayerActions{
 		Buildings: repository, Research: repository, Overview: repository, FleetTemplates: repository,
 		Alliance: repository, Options: repository, OptionsMailer: mailer, Empire: repository, Galaxy: repository, Payment: repository,
-	})
+	}).WithBuildingOptionsReadRepository(&fakeBuildingOptionsReadRepository{result: domainmcp.BuildingOptions{
+		Planet: domainmcp.Planet{ID: 11},
+		Items:  []domainmcp.BuildingOption{{ID: domaingame.BuildingMetalMine, DurationSeconds: 30}},
+	}}).WithResearchOptionsReadRepository(&fakeResearchOptionsReadRepository{result: domainmcp.ResearchOptions{
+		Planet: domainmcp.Planet{ID: 11},
+		Items:  []domainmcp.BuildingOption{{ID: domaingame.ResearchEspionage, DurationSeconds: 40}},
+	}})
+	service.now = func() time.Time { return time.Unix(1_700_000_000, 0) }
 	return repository, mailer, service
 }
 
@@ -285,12 +295,144 @@ func TestPlayerActionDryRunAndConfirmedExecution(t *testing.T) {
 			if !preview.DryRun || preview.Executed || !preview.RequiresConfirmation || preview.Confirmation == "" {
 				t.Fatalf("unexpected preview: %+v", preview)
 			}
+			if test.name == "mutate_building" || test.name == "start_research" {
+				if preview.Timing == nil || preview.Timing.DurationSeconds < 1 || preview.Timing.RemainingSeconds < 1 || preview.Timing.Status != "preview" {
+					t.Fatalf("missing positive preview timing: %+v", preview)
+				}
+			}
 			executed := actionResult(t, actionCall(t, service, test.name, confirmedArguments(test.args, preview.Confirmation)), test.key)
 			if executed.DryRun || !executed.Executed || executed.RequiresConfirmation {
 				t.Fatalf("unexpected execution: %+v", executed)
 			}
+			if test.name == "mutate_building" || test.name == "start_research" {
+				if executed.Timing == nil || executed.Timing.DurationSeconds < 1 || executed.Timing.FinishesAt <= executed.Timing.StartsAt || executed.Timing.Status != "running" {
+					t.Fatalf("missing positive execution timing: %+v", executed)
+				}
+			}
 			test.assert(t)
 		})
+	}
+}
+
+func TestPlayerActionQueueTimingProjectsQueuedAndDueWork(t *testing.T) {
+	now := int64(1_000)
+	queue := []domainmcp.BuildingQueueEntry{
+		{TechID: 1, Start: 990, End: 1_010, RemainingSeconds: 10, Status: "running"},
+		{TechID: 2, Start: 1_000, End: 1_030, RemainingSeconds: 30, Status: "queued"},
+	}
+	timing := buildingQueueTiming(queue, 2, false, now)
+	if timing == nil || timing.DurationSeconds != 30 || timing.StartsAt != 1_010 || timing.FinishesAt != 1_040 || timing.RemainingSeconds != 40 || timing.Status != "queued" {
+		t.Fatalf("unexpected projected queue timing: %+v", timing)
+	}
+	if end := projectedBuildingQueueEnd(queue, now); end != 1_040 {
+		t.Fatalf("unexpected projected queue end: %d", end)
+	}
+
+	due := buildingQueueTiming([]domainmcp.BuildingQueueEntry{{TechID: 1, Start: 900, End: 950, Status: "due"}}, 1, false, now)
+	if due == nil || due.RemainingSeconds != 0 || due.Status != "due" {
+		t.Fatalf("unexpected due timing: %+v", due)
+	}
+	if timing := newPlayerActionTiming(0, now, now, now, "running"); timing != nil {
+		t.Fatalf("zero duration must not become a completion estimate: %+v", timing)
+	}
+	if timing := newPlayerActionTiming(1, now, now-1, now, "running"); timing != nil {
+		t.Fatalf("finish before start must not become a completion estimate: %+v", timing)
+	}
+	finished := newPlayerActionTiming(1, now-2, now-1, now, "due")
+	if finished == nil || finished.RemainingSeconds != 0 {
+		t.Fatalf("past completion must clamp remaining time: %+v", finished)
+	}
+	if got := buildingQueueTiming([]domainmcp.BuildingQueueEntry{{TechID: 3, Start: 1_000, End: 1_000}}, 3, false, now); got == nil || got.DurationSeconds != 1 || got.Status != "running" {
+		t.Fatalf("invalid queue duration must be normalized: %+v", got)
+	}
+	if end := projectedBuildingQueueEnd([]domainmcp.BuildingQueueEntry{{Start: 900, End: 900}}, now); end != now+1 {
+		t.Fatalf("invalid projected duration must be normalized: %d", end)
+	}
+	if queueTimingStatus(now+1, now) != "queued" || queueTimingStatus(now, now) != "running" {
+		t.Fatal("queue timing status did not distinguish queued and running work")
+	}
+	if mcpActionQueueStatus(0, false) != "due" || mcpActionQueueStatus(1, true) != "queued" || mcpActionQueueStatus(1, false) != "running" {
+		t.Fatal("MCP action status did not cover due, queued, and running work")
+	}
+}
+
+func TestPlayerActionTimingLookupBranches(t *testing.T) {
+	const now = int64(1_000)
+	clock := func() time.Time { return time.Unix(now, 0) }
+	if timing := (Service{}).buildingMutationTiming(context.Background(), 42, 0, 1, "add", false); timing != nil {
+		t.Fatalf("missing building reader returned timing: %+v", timing)
+	}
+	if timing := (Service{buildingRead: &fakeBuildingOptionsReadRepository{err: errors.New("down")}}).buildingMutationTiming(context.Background(), 42, 0, 1, "add", false); timing != nil {
+		t.Fatalf("failed building reader returned timing: %+v", timing)
+	}
+	if timing := (Service{buildingRead: &fakeBuildingOptionsReadRepository{}}).buildingMutationTiming(context.Background(), 42, 0, 1, "add", false); timing != nil {
+		t.Fatalf("missing building option returned timing: %+v", timing)
+	}
+
+	buildingRead := &fakeBuildingOptionsReadRepository{result: domainmcp.BuildingOptions{
+		Planet: domainmcp.Planet{ID: 11},
+		Queue:  []domainmcp.BuildingQueueEntry{{TechID: 1, Start: 990, End: 1_010, Status: "running"}},
+		Items:  []domainmcp.BuildingOption{{ID: 2, DurationSeconds: 30}},
+	}}
+	service := Service{buildingRead: buildingRead, now: clock}
+	if timing := service.buildingMutationTiming(context.Background(), 42, 11, 1, "add", true); timing == nil || timing.StartsAt != 990 || timing.FinishesAt != 1_010 || timing.Status != "running" {
+		t.Fatalf("active building queue timing mismatch: %+v", timing)
+	}
+	if timing := service.buildingMutationTiming(context.Background(), 42, 11, 2, "add", true); timing == nil || timing.StartsAt != 1_010 || timing.Status != "queued" {
+		t.Fatalf("queued building timing mismatch: %+v", timing)
+	}
+
+	service.technologyRead = &fakeTechnologyReadRepository{result: domainmcp.TechnologyTree{Details: &domainmcp.TechnologyDetails{Demolish: &domainmcp.TechnologyDemolish{DurationSeconds: 25}}}}
+	if timing := service.buildingMutationTiming(context.Background(), 42, 11, 2, "destroy", false); timing == nil || timing.DurationSeconds != 25 || timing.Status != "preview" {
+		t.Fatalf("demolition preview timing mismatch: %+v", timing)
+	}
+	service.technologyRead = &fakeTechnologyReadRepository{err: errors.New("down")}
+	if timing := service.buildingMutationTiming(context.Background(), 42, 11, 2, "destroy", false); timing == nil || timing.DurationSeconds != 30 {
+		t.Fatalf("demolition fallback timing mismatch: %+v", timing)
+	}
+
+	if timing := (Service{}).researchMutationTiming(context.Background(), 42, 0, 106, false); timing != nil {
+		t.Fatalf("missing research reader returned timing: %+v", timing)
+	}
+	if timing := (Service{researchRead: &fakeResearchOptionsReadRepository{err: errors.New("down")}}).researchMutationTiming(context.Background(), 42, 0, 106, false); timing != nil {
+		t.Fatalf("failed research reader returned timing: %+v", timing)
+	}
+	researchRead := &fakeResearchOptionsReadRepository{result: domainmcp.ResearchOptions{Active: &domainmcp.ResearchQueueEntry{TechID: 106, Start: 900, End: 950, RemainingSeconds: 0}}}
+	service = Service{researchRead: researchRead, now: clock}
+	if timing := service.researchMutationTiming(context.Background(), 42, 0, 106, true); timing == nil || timing.Status != "due" || timing.RemainingSeconds != 0 {
+		t.Fatalf("due research timing mismatch: %+v", timing)
+	}
+	if timing := service.researchMutationTiming(context.Background(), 42, 0, 108, true); timing != nil {
+		t.Fatalf("unrelated active research returned timing: %+v", timing)
+	}
+	researchRead.result = domainmcp.ResearchOptions{Items: []domainmcp.BuildingOption{{ID: 108, DurationSeconds: 40}}}
+	if timing := service.researchMutationTiming(context.Background(), 42, 0, 108, true); timing == nil || timing.Status != "running" || timing.DurationSeconds != 40 {
+		t.Fatalf("new research timing mismatch: %+v", timing)
+	}
+	if timing := service.researchMutationTiming(context.Background(), 42, 0, 999, false); timing != nil {
+		t.Fatalf("missing research option returned timing: %+v", timing)
+	}
+	if (Service{}).currentTime().IsZero() {
+		t.Fatal("default MCP action clock returned zero")
+	}
+}
+
+func TestPlayerActionMutationIssuesDoNotInventCompletionTiming(t *testing.T) {
+	repository, _, service := playerActionsFixture()
+	buildingArgs := map[string]any{"planetId": 11, "action": "add", "techId": 1}
+	buildingPreview := actionResult(t, actionCall(t, service, "mutate_building", buildingArgs), "buildingMutation")
+	repository.buildingIssue = domaingame.BuildingActionIssue(domaingame.BuildingsIssueBusy)
+	building := actionResult(t, actionCall(t, service, "mutate_building", confirmedArguments(buildingArgs, buildingPreview.Confirmation)), "buildingMutation")
+	if building.Issue == nil || building.Timing != nil {
+		t.Fatalf("rejected building mutation returned invalid timing: %+v", building)
+	}
+
+	researchArgs := map[string]any{"planetId": 11, "techId": 106}
+	researchPreview := actionResult(t, actionCall(t, service, "start_research", researchArgs), "researchMutation")
+	repository.researchIssue = domaingame.BuildingActionIssue(domaingame.BuildingsIssueBusy)
+	research := actionResult(t, actionCall(t, service, "start_research", confirmedArguments(researchArgs, researchPreview.Confirmation)), "researchMutation")
+	if research.Issue == nil || research.Timing != nil {
+		t.Fatalf("rejected research mutation returned invalid timing: %+v", research)
 	}
 }
 

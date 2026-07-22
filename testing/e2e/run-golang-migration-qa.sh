@@ -9,6 +9,7 @@ LEGACY_E2E_CONTAINER_DIR="${OGAME_E2E_CONTAINER_DIR:-/tmp/ogame-e2e}"
 mkdir -p "$ROOT_DIR/.tmp"
 
 export OGAME_MCP_RATE_LIMIT_ENABLE="${OGAME_MCP_RATE_LIMIT_ENABLE:-0}"
+export OGAME_QUEUE_POLL_INTERVAL_MS="${OGAME_QUEUE_POLL_INTERVAL_MS:-0}"
 
 if command -v bun >/dev/null 2>&1; then
   bun "$SCRIPT_DIR/audit-legacy-behavior-surface.mjs"

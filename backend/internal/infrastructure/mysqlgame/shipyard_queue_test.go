@@ -95,7 +95,7 @@ func TestShipyardRepositoryMCPEnqueueShipyardOrderPreviewAndExecute(t *testing.T
 	if err != nil {
 		t.Fatal(err)
 	}
-	if preview.Issue != nil || preview.PlayerID != 42 || preview.PlanetID != 99 || preview.Kind != "fleet" || preview.Name != "Light Fighter" || preview.Amount != 2 || preview.MaxBuild <= 0 || preview.DurationSeconds <= 0 {
+	if preview.Issue != nil || preview.PlayerID != 42 || preview.PlanetID != 99 || preview.Kind != "fleet" || preview.Name != "Light Fighter" || preview.Amount != 2 || preview.MaxBuild <= 0 || preview.DurationSeconds <= 0 || preview.TotalDurationSeconds != preview.DurationSeconds*2 || preview.StartsAt != now.Unix() || preview.FinishesAt <= preview.StartsAt || preview.RemainingSeconds != preview.TotalDurationSeconds || preview.Status != "preview" {
 		t.Fatalf("unexpected preview: %+v", preview)
 	}
 
@@ -103,11 +103,25 @@ func TestShipyardRepositoryMCPEnqueueShipyardOrderPreviewAndExecute(t *testing.T
 	if err != nil {
 		t.Fatal(err)
 	}
-	if !enqueued.Executed || enqueued.Issue != nil || enqueued.Amount != 2 {
+	if !enqueued.Executed || enqueued.Issue != nil || enqueued.Amount != 2 || enqueued.TotalDurationSeconds != enqueued.DurationSeconds*2 || enqueued.Status != "running" {
 		t.Fatalf("unexpected enqueue result: %+v", enqueued)
 	}
 	if len(runner.execs) != 2 || runner.execs[1].args[1] != queueTypeShipyard || runner.execs[1].args[3] != domaingame.FleetLightFighter || runner.execs[1].args[4] != 2 {
 		t.Fatalf("expected legacy shipyard queue insert, got %+v", runner.execs)
+	}
+}
+
+func TestProjectedShipyardQueueEndIncludesEveryQueuedUnit(t *testing.T) {
+	tasks := []buildingQueueTask{
+		{Start: 100, End: 110, Level: 3},
+		{Start: 130, End: 150, Level: 2},
+		{Start: 200, End: 199, Level: 0},
+	}
+	if got := projectedShipyardQueueEnd(tasks, 90); got != 201 {
+		t.Fatalf("expected serialized queue end 201, got %d", got)
+	}
+	if got := projectedShipyardQueueEnd(nil, 90); got != 90 {
+		t.Fatalf("empty queue end = %d", got)
 	}
 }
 

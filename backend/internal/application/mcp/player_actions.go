@@ -7,6 +7,7 @@ import (
 	"encoding/json"
 	"fmt"
 	"strings"
+	"time"
 
 	appgame "github.com/hjyoon/ogame-opensource/backend/internal/application/game"
 	domaingame "github.com/hjyoon/ogame-opensource/backend/internal/domain/game"
@@ -82,6 +83,15 @@ type playerActionResult struct {
 	Executed             bool                   `json:"executed"`
 	Issue                *domainmcp.ActionIssue `json:"issue,omitempty"`
 	Details              map[string]any         `json:"details,omitempty"`
+	Timing               *playerActionTiming    `json:"timing,omitempty"`
+}
+
+type playerActionTiming struct {
+	DurationSeconds  int    `json:"durationSeconds"`
+	StartsAt         int64  `json:"startsAt"`
+	FinishesAt       int64  `json:"finishesAt"`
+	RemainingSeconds int    `json:"remainingSeconds"`
+	Status           string `json:"status"`
 }
 
 func playerActionIssue(code string, message string) *domainmcp.ActionIssue {
@@ -166,6 +176,9 @@ func (s Service) callMutateBuilding(ctx context.Context, access domainmcp.Access
 	}
 	result, execute, err := preparePlayerAction("mutate_building", access, action, planetID, techID, arguments)
 	if err != nil || !execute {
+		if err == nil {
+			result.Timing = s.buildingMutationTiming(ctx, access.PlayerID, planetID, techID, action, false)
+		}
 		return playerActionToolResult("buildingMutation", result), err
 	}
 	outcome, err := s.playerActions.Buildings.MutateBuildings(ctx, appgame.BuildingsMutationQuery{PlayerID: access.PlayerID, PlanetID: planetID, Action: action, TechID: techID})
@@ -174,6 +187,8 @@ func (s Service) callMutateBuilding(ctx context.Context, access domainmcp.Access
 	}
 	if outcome.ActionIssue != nil {
 		result.Issue = playerActionIssue(outcome.ActionIssue.Code, outcome.ActionIssue.Message)
+	} else {
+		result.Timing = s.buildingMutationTiming(ctx, access.PlayerID, planetID, techID, action, true)
 	}
 	result.Details = map[string]any{"techId": techID}
 	return playerActionToolResult("buildingMutation", result), nil
@@ -190,6 +205,9 @@ func (s Service) callStartResearch(ctx context.Context, access domainmcp.Access,
 	}
 	result, execute, err := preparePlayerAction("start_research", access, "start", planetID, techID, arguments)
 	if err != nil || !execute {
+		if err == nil {
+			result.Timing = s.researchMutationTiming(ctx, access.PlayerID, planetID, techID, false)
+		}
 		return playerActionToolResult("researchMutation", result), err
 	}
 	outcome, err := s.playerActions.Research.MutateResearch(ctx, appgame.ResearchMutationQuery{PlayerID: access.PlayerID, PlanetID: planetID, Action: "start", TechID: techID})
@@ -198,9 +216,159 @@ func (s Service) callStartResearch(ctx context.Context, access domainmcp.Access,
 	}
 	if outcome.ActionIssue != nil {
 		result.Issue = playerActionIssue(outcome.ActionIssue.Code, outcome.ActionIssue.Message)
+	} else {
+		result.Timing = s.researchMutationTiming(ctx, access.PlayerID, planetID, techID, true)
 	}
 	result.Details = map[string]any{"techId": techID}
 	return playerActionToolResult("researchMutation", result), nil
+}
+
+func (s Service) buildingMutationTiming(ctx context.Context, playerID int, planetID int, techID int, action string, executed bool) *playerActionTiming {
+	if s.buildingRead == nil {
+		return nil
+	}
+	options, err := s.buildingRead.GetMCPBuildingOptions(ctx, playerID, planetID)
+	if err != nil {
+		return nil
+	}
+	now := s.currentTime().Unix()
+	if executed {
+		if timing := buildingQueueTiming(options.Queue, techID, action == "destroy", now); timing != nil {
+			return timing
+		}
+	}
+	duration := 0
+	for _, item := range options.Items {
+		if item.ID == techID {
+			duration = item.DurationSeconds
+			break
+		}
+	}
+	if action == "destroy" && s.technologyRead != nil {
+		technology, technologyErr := s.technologyRead.GetMCPTechnology(ctx, playerID, domainmcp.TechnologyCommand{PlanetID: options.Planet.ID, DetailsID: techID})
+		if technologyErr == nil && technology.Details != nil && technology.Details.Demolish != nil {
+			duration = technology.Details.Demolish.DurationSeconds
+		}
+	}
+	if duration < 1 {
+		return nil
+	}
+	startsAt := projectedBuildingQueueEnd(options.Queue, now)
+	status := "preview"
+	if executed {
+		status = queueTimingStatus(startsAt, now)
+	}
+	return newPlayerActionTiming(duration, startsAt, startsAt+int64(duration), now, status)
+}
+
+func (s Service) researchMutationTiming(ctx context.Context, playerID int, planetID int, techID int, executed bool) *playerActionTiming {
+	if s.researchRead == nil {
+		return nil
+	}
+	options, err := s.researchRead.GetMCPResearchOptions(ctx, playerID, planetID)
+	if err != nil {
+		return nil
+	}
+	now := s.currentTime().Unix()
+	if options.Active != nil {
+		if executed && options.Active.TechID == techID {
+			status := mcpActionQueueStatus(options.Active.RemainingSeconds, false)
+			return newPlayerActionTiming(options.Active.End-options.Active.Start, int64(options.Active.Start), int64(options.Active.End), now, status)
+		}
+		return nil
+	}
+	for _, item := range options.Items {
+		if item.ID == techID && item.DurationSeconds > 0 {
+			status := "preview"
+			if executed {
+				status = "running"
+			}
+			return newPlayerActionTiming(item.DurationSeconds, now, now+int64(item.DurationSeconds), now, status)
+		}
+	}
+	return nil
+}
+
+func buildingQueueTiming(queue []domainmcp.BuildingQueueEntry, techID int, destroy bool, now int64) *playerActionTiming {
+	cursor := now
+	var found *playerActionTiming
+	for index, entry := range queue {
+		duration := entry.End - entry.Start
+		if duration < 1 {
+			duration = 1
+		}
+		startsAt := cursor
+		finishesAt := cursor + int64(duration)
+		if index == 0 {
+			startsAt = int64(entry.Start)
+			finishesAt = int64(entry.End)
+			cursor = finishesAt
+			if cursor < now {
+				cursor = now
+			}
+		} else {
+			cursor = finishesAt
+		}
+		if entry.TechID == techID && entry.Destroy == destroy {
+			status := entry.Status
+			if status == "" {
+				status = queueTimingStatus(startsAt, now)
+			}
+			found = newPlayerActionTiming(duration, startsAt, finishesAt, now, status)
+		}
+	}
+	return found
+}
+
+func projectedBuildingQueueEnd(queue []domainmcp.BuildingQueueEntry, now int64) int64 {
+	cursor := now
+	for index, entry := range queue {
+		duration := entry.End - entry.Start
+		if duration < 1 {
+			duration = 1
+		}
+		if index == 0 && int64(entry.End) > cursor {
+			cursor = int64(entry.End)
+		} else {
+			cursor += int64(duration)
+		}
+	}
+	return cursor
+}
+
+func newPlayerActionTiming(duration int, startsAt int64, finishesAt int64, now int64, status string) *playerActionTiming {
+	if duration < 1 || finishesAt < startsAt {
+		return nil
+	}
+	remaining := finishesAt - now
+	if remaining < 0 {
+		remaining = 0
+	}
+	return &playerActionTiming{DurationSeconds: duration, StartsAt: startsAt, FinishesAt: finishesAt, RemainingSeconds: int(remaining), Status: status}
+}
+
+func (s Service) currentTime() time.Time {
+	if s.now == nil {
+		return time.Now()
+	}
+	return s.now()
+}
+
+func queueTimingStatus(startsAt int64, now int64) string {
+	if startsAt > now {
+		return "queued"
+	}
+	return "running"
+}
+
+func mcpActionQueueStatus(remaining int, queued bool) string {
+	if remaining <= 0 {
+		return "due"
+	}
+	if queued {
+		return "queued"
+	}
+	return "running"
 }
 
 func (s Service) callMutatePlanet(ctx context.Context, access domainmcp.Access, arguments map[string]any) (domainmcp.ToolCallResult, error) {
@@ -768,13 +936,13 @@ func playerMutationTool(name string, title string, description string, propertie
 }
 
 func mutateBuildingTool() domainmcp.Tool {
-	return playerMutationTool("mutate_building", "Start building construction", "Queue construction or demolition using the same validation as the game Buildings page.", map[string]any{
+	return playerMutationTool("mutate_building", "Start building construction", "Queue construction or demolition using the same validation as the game Buildings page and return explicit duration and completion timing when available.", map[string]any{
 		"planetId": map[string]any{"type": "integer", "minimum": 0}, "action": map[string]any{"type": "string", "enum": []string{"add", "destroy"}}, "techId": map[string]any{"type": "integer", "minimum": 1},
 	}, []string{"action", "techId"}, "buildingMutation")
 }
 
 func startResearchTool() domainmcp.Tool {
-	return playerMutationTool("start_research", "Start research", "Start a research task using the same requirements, resources, and queue rules as the game Research page.", map[string]any{
+	return playerMutationTool("start_research", "Start research", "Start a research task using the same requirements, resources, and queue rules as the game Research page and return explicit duration and completion timing when available.", map[string]any{
 		"planetId": map[string]any{"type": "integer", "minimum": 0}, "techId": map[string]any{"type": "integer", "minimum": 1},
 	}, []string{"techId"}, "researchMutation")
 }

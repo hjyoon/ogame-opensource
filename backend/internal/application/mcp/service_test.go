@@ -4084,8 +4084,8 @@ func TestServiceCancelResearchQueueRequiresScopeRepositoryAndValidParams(t *test
 
 func TestServiceCallsEnqueueShipyardOrderWithDryRunAndConfirmation(t *testing.T) {
 	repository := &fakeQueueWriteRepository{
-		shipyardPreview:  domainmcp.EnqueueShipyardOrderResult{PlayerID: 42, PlanetID: 99, Kind: "fleet", ItemID: 204, Name: "Light Fighter", Requested: 2, Amount: 2, MaxBuild: 10, DurationSeconds: 5},
-		shipyardEnqueued: domainmcp.EnqueueShipyardOrderResult{PlayerID: 42, PlanetID: 99, Kind: "fleet", ItemID: 204, Name: "Light Fighter", Requested: 2, Amount: 2, MaxBuild: 10, DurationSeconds: 5, Executed: true},
+		shipyardPreview:  domainmcp.EnqueueShipyardOrderResult{PlayerID: 42, PlanetID: 99, Kind: "fleet", ItemID: 204, Name: "Light Fighter", Requested: 2, Amount: 2, MaxBuild: 10, DurationSeconds: 5, TotalDurationSeconds: 10, StartsAt: 100, FinishesAt: 110, RemainingSeconds: 10, Status: "preview"},
+		shipyardEnqueued: domainmcp.EnqueueShipyardOrderResult{PlayerID: 42, PlanetID: 99, Kind: "fleet", ItemID: 204, Name: "Light Fighter", Requested: 2, Amount: 2, MaxBuild: 10, DurationSeconds: 5, TotalDurationSeconds: 10, StartsAt: 100, FinishesAt: 110, RemainingSeconds: 10, Status: "running", Executed: true},
 	}
 	service := NewServiceWithTokenVerifier(fakeHealthProvider{}, fakeTokenVerifier{
 		access: map[string]domainmcp.Access{
@@ -4105,6 +4105,9 @@ func TestServiceCallsEnqueueShipyardOrderWithDryRunAndConfirmation(t *testing.T)
 	if !dryRun.DryRun || dryRun.Executed || !dryRun.RequiresConfirmation || !strings.HasPrefix(dryRun.Confirmation, "enqueue_shipyard_order:99:fleet:204:2:") {
 		t.Fatalf("unexpected dry-run result: %+v", dryRun)
 	}
+	if dryRun.DurationSeconds != 5 || dryRun.TotalDurationSeconds != 10 || dryRun.StartsAt != 100 || dryRun.FinishesAt != 110 || dryRun.RemainingSeconds != 10 || dryRun.Status != "preview" {
+		t.Fatalf("unexpected dry-run timing: %+v", dryRun)
+	}
 	if repository.shipyardPreviewPlayerID != 42 || repository.shipyardPreviewCommand.PlanetID != 99 || repository.shipyardPreviewCommand.Kind != "fleet" || repository.shipyardPreviewCommand.ItemID != 204 || repository.shipyardPreviewCommand.Amount != 2 {
 		t.Fatalf("unexpected preview command: player=%d command=%+v", repository.shipyardPreviewPlayerID, repository.shipyardPreviewCommand)
 	}
@@ -4120,6 +4123,9 @@ func TestServiceCallsEnqueueShipyardOrderWithDryRunAndConfirmation(t *testing.T)
 	enqueued := result.StructuredContent.(map[string]any)["enqueueShipyardOrder"].(domainmcp.EnqueueShipyardOrderResult)
 	if enqueued.DryRun || !enqueued.Executed || enqueued.RequiresConfirmation {
 		t.Fatalf("unexpected execute result: %+v", enqueued)
+	}
+	if enqueued.TotalDurationSeconds != 10 || enqueued.FinishesAt != 110 || enqueued.Status != "running" {
+		t.Fatalf("unexpected execute timing: %+v", enqueued)
 	}
 	if repository.shipyardEnqueuePlayerID != 42 || repository.shipyardEnqueueCommand.Confirm != dryRun.Confirmation {
 		t.Fatalf("unexpected enqueue command: player=%d command=%+v", repository.shipyardEnqueuePlayerID, repository.shipyardEnqueueCommand)

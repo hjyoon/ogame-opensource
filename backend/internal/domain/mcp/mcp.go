@@ -189,6 +189,7 @@ type BuildingQueueEntry struct {
 	Start            int    `json:"start"`
 	End              int    `json:"end"`
 	RemainingSeconds int    `json:"remainingSeconds"`
+	Status           string `json:"status"`
 }
 
 type BuildingQueue struct {
@@ -219,14 +220,15 @@ type BuildingOptions struct {
 }
 
 type ResearchQueueEntry struct {
-	TaskID           int  `json:"taskId"`
-	PlanetID         int  `json:"planetId"`
-	TechID           int  `json:"techId"`
-	Level            int  `json:"level"`
-	Start            int  `json:"start"`
-	End              int  `json:"end"`
-	RemainingSeconds int  `json:"remainingSeconds"`
-	Cancelable       bool `json:"cancelable"`
+	TaskID           int    `json:"taskId"`
+	PlanetID         int    `json:"planetId"`
+	TechID           int    `json:"techId"`
+	Level            int    `json:"level"`
+	Start            int    `json:"start"`
+	End              int    `json:"end"`
+	RemainingSeconds int    `json:"remainingSeconds"`
+	Cancelable       bool   `json:"cancelable"`
+	Status           string `json:"status"`
 }
 
 type ResearchOptions struct {
@@ -245,6 +247,7 @@ type ShipyardQueueEntry struct {
 	Start            int    `json:"start"`
 	End              int    `json:"end"`
 	RemainingSeconds int    `json:"remainingSeconds"`
+	Status           string `json:"status"`
 }
 
 type ShipyardOption struct {
@@ -500,6 +503,11 @@ type EnqueueShipyardOrderResult struct {
 	Amount               int          `json:"amount"`
 	MaxBuild             int          `json:"maxBuild,omitempty"`
 	DurationSeconds      int          `json:"durationSeconds,omitempty"`
+	TotalDurationSeconds int          `json:"totalDurationSeconds,omitempty"`
+	StartsAt             int64        `json:"startsAt,omitempty"`
+	FinishesAt           int64        `json:"finishesAt,omitempty"`
+	RemainingSeconds     int          `json:"remainingSeconds,omitempty"`
+	Status               string       `json:"status,omitempty"`
 	DryRun               bool         `json:"dryRun"`
 	RequiresConfirmation bool         `json:"requiresConfirmation"`
 	Confirmation         string       `json:"confirmation,omitempty"`

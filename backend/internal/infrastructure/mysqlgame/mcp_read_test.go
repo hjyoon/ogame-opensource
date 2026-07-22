@@ -248,13 +248,27 @@ func TestMCPReadRepositoryGetsBuildingQueue(t *testing.T) {
 		queue.Count != 2 ||
 		queue.Entries[0].Name != "Metal Mine" ||
 		queue.Entries[0].RemainingSeconds != 50 ||
+		queue.Entries[0].Status != "running" ||
 		!queue.Entries[1].Destroy ||
-		queue.Entries[1].RemainingSeconds != 0 {
+		queue.Entries[1].RemainingSeconds != 0 ||
+		queue.Entries[1].Status != "due" {
 		t.Fatalf("unexpected building queue: %+v", queue)
 	}
 	if !strings.Contains(queryer.calls[2].sql, "FROM `uni1_buildqueue`") ||
 		!strings.Contains(queryer.calls[2].sql, "ORDER BY list_id ASC") {
 		t.Fatalf("unexpected building queue SQL: %+v", queryer.calls)
+	}
+}
+
+func TestMCPQueueStatusDistinguishesRunningQueuedAndDue(t *testing.T) {
+	if got := mcpQueueStatus(10, false); got != "running" {
+		t.Fatalf("running status = %q", got)
+	}
+	if got := mcpQueueStatus(10, true); got != "queued" {
+		t.Fatalf("queued status = %q", got)
+	}
+	if got := mcpQueueStatus(0, true); got != "due" {
+		t.Fatalf("due status = %q", got)
 	}
 }
 

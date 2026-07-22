@@ -137,7 +137,7 @@ func TestBuildingsRepositoryMapsMCPBuildingOptions(t *testing.T) {
 	if options.PlayerID != 42 || options.Planet.ID != 99 || options.Planet.TypeName != "planet" || !options.CommanderActive {
 		t.Fatalf("unexpected mcp building options summary: %+v", options)
 	}
-	if len(options.Queue) != 1 || options.Queue[0].TechID != domaingame.BuildingMetalStorage || options.Queue[0].RemainingSeconds != 10 {
+	if len(options.Queue) != 1 || options.Queue[0].TechID != domaingame.BuildingMetalStorage || options.Queue[0].RemainingSeconds != 10 || options.Queue[0].Status != "running" {
 		t.Fatalf("unexpected mcp building queue: %+v", options.Queue)
 	}
 	metalMine := domainMCPBuildingOptionByID(t, options, domaingame.BuildingMetalMine)

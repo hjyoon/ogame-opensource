@@ -4987,8 +4987,9 @@ func buildingQueueTool() domainmcp.Tool {
 									"start":            map[string]any{"type": "integer"},
 									"end":              map[string]any{"type": "integer"},
 									"remainingSeconds": map[string]any{"type": "integer"},
+									"status":           map[string]any{"type": "string", "enum": []string{"running", "queued", "due"}},
 								},
-								"required": []string{"listId", "techId", "name", "level", "destroy", "start", "end", "remainingSeconds"},
+								"required": []string{"listId", "techId", "name", "level", "destroy", "start", "end", "remainingSeconds", "status"},
 							},
 						},
 					},
@@ -6975,7 +6976,7 @@ func enqueueShipyardOrderTool() domainmcp.Tool {
 	return domainmcp.Tool{
 		Name:        "enqueue_shipyard_order",
 		Title:       "Enqueue Shipyard Order",
-		Description: "Queue fleet or defense construction for an owned planet. Defaults to dry-run and requires the returned confirmation string before execution.",
+		Description: "Queue fleet or defense construction for an owned planet and return unit, total, start, finish, remaining, and queue-status timing. Defaults to dry-run and requires the returned confirmation string before execution.",
 		InputSchema: map[string]any{
 			"type": "object",
 			"properties": map[string]any{
@@ -7023,6 +7024,11 @@ func enqueueShipyardOrderTool() domainmcp.Tool {
 						"amount":               map[string]any{"type": "integer"},
 						"maxBuild":             map[string]any{"type": "integer"},
 						"durationSeconds":      map[string]any{"type": "integer"},
+						"totalDurationSeconds": map[string]any{"type": "integer"},
+						"startsAt":             map[string]any{"type": "integer"},
+						"finishesAt":           map[string]any{"type": "integer"},
+						"remainingSeconds":     map[string]any{"type": "integer"},
+						"status":               map[string]any{"type": "string", "enum": []string{"preview", "running", "queued"}},
 						"dryRun":               map[string]any{"type": "boolean"},
 						"requiresConfirmation": map[string]any{"type": "boolean"},
 						"confirmation":         map[string]any{"type": "string"},

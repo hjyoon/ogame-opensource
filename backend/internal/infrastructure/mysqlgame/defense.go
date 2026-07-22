@@ -122,7 +122,7 @@ func (r DefenseRepository) GetMCPDefenseOptions(ctx context.Context, playerID in
 		return domainmcp.DefenseOptions{}, err
 	}
 	queue := make([]domainmcp.ShipyardQueueEntry, 0, len(defense.Queue))
-	for _, entry := range defense.Queue {
+	for index, entry := range defense.Queue {
 		queue = append(queue, domainmcp.ShipyardQueueEntry{
 			TaskID:           entry.TaskID,
 			UnitID:           entry.UnitID,
@@ -131,6 +131,7 @@ func (r DefenseRepository) GetMCPDefenseOptions(ctx context.Context, playerID in
 			Start:            entry.Start,
 			End:              entry.End,
 			RemainingSeconds: entry.RemainingSeconds,
+			Status:           mcpQueueStatus(entry.RemainingSeconds, index > 0),
 		})
 	}
 	items := make([]domainmcp.ShipyardOption, 0, len(defense.Items))

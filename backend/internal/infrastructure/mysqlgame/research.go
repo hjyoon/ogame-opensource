@@ -158,6 +158,7 @@ func mcpResearchQueueEntry(queue *domaingame.ResearchQueue) *domainmcp.ResearchQ
 		End:              queue.End,
 		RemainingSeconds: queue.RemainingSeconds,
 		Cancelable:       queue.Cancelable,
+		Status:           mcpQueueStatus(queue.RemainingSeconds, false),
 	}
 }
 

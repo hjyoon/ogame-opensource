@@ -68,7 +68,7 @@ func TestResearchRepositoryMapsMCPResearchOptions(t *testing.T) {
 	if options.PlayerID != 42 || options.Planet.ID != 99 || options.Planet.TypeName != "planet" || !options.HasLab {
 		t.Fatalf("unexpected mcp research options summary: %+v", options)
 	}
-	if options.Active == nil || options.Active.TaskID != 77 || options.Active.RemainingSeconds != 50 {
+	if options.Active == nil || options.Active.TaskID != 77 || options.Active.RemainingSeconds != 50 || options.Active.Status != "running" {
 		t.Fatalf("unexpected mcp active research queue: %+v", options.Active)
 	}
 	computer := domainMCPResearchOptionByID(t, options, domaingame.ResearchComputer)

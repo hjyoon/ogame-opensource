@@ -204,7 +204,7 @@ func (r MCPReadRepository) GetMCPBuildingQueue(ctx context.Context, playerID int
 		return domainmcp.BuildingQueue{}, err
 	}
 	queueEntries := make([]domainmcp.BuildingQueueEntry, 0, len(entries))
-	for _, entry := range entries {
+	for index, entry := range entries {
 		queueEntries = append(queueEntries, domainmcp.BuildingQueueEntry{
 			ListID:           entry.ListID,
 			TechID:           entry.TechID,
@@ -214,6 +214,7 @@ func (r MCPReadRepository) GetMCPBuildingQueue(ctx context.Context, playerID int
 			Start:            entry.Start,
 			End:              entry.End,
 			RemainingSeconds: entry.RemainingSeconds,
+			Status:           mcpQueueStatus(entry.RemainingSeconds, index > 0),
 		})
 	}
 	return domainmcp.BuildingQueue{
@@ -222,6 +223,16 @@ func (r MCPReadRepository) GetMCPBuildingQueue(ctx context.Context, playerID int
 		Count:    len(queueEntries),
 		Entries:  queueEntries,
 	}, nil
+}
+
+func mcpQueueStatus(remaining int, queued bool) string {
+	if remaining <= 0 {
+		return "due"
+	}
+	if queued {
+		return "queued"
+	}
+	return "running"
 }
 
 func (r MCPReadRepository) ListMCPMessages(ctx context.Context, playerID int, query domainmcp.MessageQuery) (domainmcp.MessageList, error) {

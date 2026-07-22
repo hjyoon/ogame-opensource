@@ -64,7 +64,7 @@ func TestDefenseRepositoryMapsMCPDefenseOptions(t *testing.T) {
 	if options.PlayerID != 42 || options.Planet.ID != 99 || options.Planet.TypeName != "planet" || !options.HasShipyard || options.Busy {
 		t.Fatalf("unexpected mcp defense options summary: %+v", options)
 	}
-	if len(options.Queue) != 1 || options.Queue[0].TaskID != 11 || options.Queue[0].UnitID != domaingame.DefenseRocketLauncher || options.Queue[0].Count != 3 {
+	if len(options.Queue) != 1 || options.Queue[0].TaskID != 11 || options.Queue[0].UnitID != domaingame.DefenseRocketLauncher || options.Queue[0].Count != 3 || options.Queue[0].Status != "due" {
 		t.Fatalf("unexpected mcp defense queue: %+v", options.Queue)
 	}
 	item := domainMCPDefenseOptionByID(t, options, domaingame.DefenseRocketLauncher)

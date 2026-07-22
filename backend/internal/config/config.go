@@ -55,6 +55,7 @@ type Config struct {
 	DBMaxOpenConns       int
 	DBMaxIdleConns       int
 	DBConnMaxLifetimeSec int
+	QueuePollIntervalMS  int
 }
 
 func Load() Config {
@@ -103,6 +104,7 @@ func Load() Config {
 		DBMaxOpenConns:       envInt("OGAME_DB_MAX_OPEN_CONNS", 25),
 		DBMaxIdleConns:       envInt("OGAME_DB_MAX_IDLE_CONNS", 5),
 		DBConnMaxLifetimeSec: envInt("OGAME_DB_CONN_MAX_LIFETIME_SECONDS", 1800),
+		QueuePollIntervalMS:  envInt("OGAME_QUEUE_POLL_INTERVAL_MS", 1000),
 	}
 }
 

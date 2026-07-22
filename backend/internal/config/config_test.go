@@ -45,6 +45,7 @@ func TestLoadDefaults(t *testing.T) {
 	t.Setenv("OGAME_DB_MAX_OPEN_CONNS", "")
 	t.Setenv("OGAME_DB_MAX_IDLE_CONNS", "")
 	t.Setenv("OGAME_DB_CONN_MAX_LIFETIME_SECONDS", "")
+	t.Setenv("OGAME_QUEUE_POLL_INTERVAL_MS", "")
 	t.Setenv("MYSQL_ROOT_PASSWORD", "")
 
 	cfg := Load()
@@ -70,7 +71,7 @@ func TestLoadDefaults(t *testing.T) {
 	if !cfg.UniDBEnabled || cfg.UniDBHost != "mysql" || cfg.UniDBUser != "root" || cfg.UniDBPassword != "123" || cfg.UniDBName != "uni" || cfg.UniDBPrefix != "uni1_" || cfg.UniDBSecret != "docker-secret" || cfg.UniNumber != 1 {
 		t.Fatalf("unexpected default universe DB config: %+v", cfg)
 	}
-	if cfg.DBMaxOpenConns != 25 || cfg.DBMaxIdleConns != 5 || cfg.DBConnMaxLifetimeSec != 1800 {
+	if cfg.DBMaxOpenConns != 25 || cfg.DBMaxIdleConns != 5 || cfg.DBConnMaxLifetimeSec != 1800 || cfg.QueuePollIntervalMS != 1000 {
 		t.Fatalf("unexpected default DB pool config: %+v", cfg)
 	}
 }
@@ -118,6 +119,7 @@ func TestLoadEnvOverrides(t *testing.T) {
 	t.Setenv("OGAME_DB_MAX_OPEN_CONNS", "40")
 	t.Setenv("OGAME_DB_MAX_IDLE_CONNS", "8")
 	t.Setenv("OGAME_DB_CONN_MAX_LIFETIME_SECONDS", "900")
+	t.Setenv("OGAME_QUEUE_POLL_INTERVAL_MS", "250")
 
 	cfg := Load()
 
@@ -142,7 +144,7 @@ func TestLoadEnvOverrides(t *testing.T) {
 	if cfg.UniDBEnabled || cfg.UniDBHost != "uni-db.local:3307" || cfg.UniDBUser != "uni" || cfg.UniDBPassword != "uni-secret" || cfg.UniDBName != "uni_test" || cfg.UniDBPrefix != "u2_" || cfg.UniDBSecret != "legacy-secret" || cfg.UniNumber != 2 {
 		t.Fatalf("unexpected universe DB override: %+v", cfg)
 	}
-	if cfg.DBMaxOpenConns != 40 || cfg.DBMaxIdleConns != 8 || cfg.DBConnMaxLifetimeSec != 900 {
+	if cfg.DBMaxOpenConns != 40 || cfg.DBMaxIdleConns != 8 || cfg.DBConnMaxLifetimeSec != 900 || cfg.QueuePollIntervalMS != 250 {
 		t.Fatalf("unexpected DB pool override: %+v", cfg)
 	}
 }

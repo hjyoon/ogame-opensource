@@ -113,8 +113,8 @@ func (r BuildingsRepository) GetMCPBuildingOptions(ctx context.Context, playerID
 		return domainmcp.BuildingOptions{}, err
 	}
 	queue := make([]domainmcp.BuildingQueueEntry, 0, len(buildings.Queue))
-	for _, entry := range buildings.Queue {
-		queue = append(queue, mcpBuildingQueueEntry(entry))
+	for index, entry := range buildings.Queue {
+		queue = append(queue, mcpBuildingQueueEntry(entry, index))
 	}
 	items := make([]domainmcp.BuildingOption, 0, len(buildings.Items))
 	for _, item := range buildings.Items {
@@ -150,7 +150,7 @@ func (r BuildingsRepository) GetMCPBuildingOptions(ctx context.Context, playerID
 	}, nil
 }
 
-func mcpBuildingQueueEntry(entry domaingame.BuildingQueueEntry) domainmcp.BuildingQueueEntry {
+func mcpBuildingQueueEntry(entry domaingame.BuildingQueueEntry, position int) domainmcp.BuildingQueueEntry {
 	return domainmcp.BuildingQueueEntry{
 		ListID:           entry.ListID,
 		TechID:           entry.TechID,
@@ -160,6 +160,7 @@ func mcpBuildingQueueEntry(entry domaingame.BuildingQueueEntry) domainmcp.Buildi
 		Start:            entry.Start,
 		End:              entry.End,
 		RemainingSeconds: entry.RemainingSeconds,
+		Status:           mcpQueueStatus(entry.RemainingSeconds, position > 0),
 	}
 }
 

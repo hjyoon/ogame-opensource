@@ -120,7 +120,7 @@ func (r ShipyardRepository) GetMCPShipyardOptions(ctx context.Context, playerID 
 		return domainmcp.ShipyardOptions{}, err
 	}
 	queue := make([]domainmcp.ShipyardQueueEntry, 0, len(shipyard.Queue))
-	for _, entry := range shipyard.Queue {
+	for index, entry := range shipyard.Queue {
 		queue = append(queue, domainmcp.ShipyardQueueEntry{
 			TaskID:           entry.TaskID,
 			UnitID:           entry.UnitID,
@@ -129,6 +129,7 @@ func (r ShipyardRepository) GetMCPShipyardOptions(ctx context.Context, playerID 
 			Start:            entry.Start,
 			End:              entry.End,
 			RemainingSeconds: entry.RemainingSeconds,
+			Status:           mcpQueueStatus(entry.RemainingSeconds, index > 0),
 		})
 	}
 	items := make([]domainmcp.ShipyardOption, 0, len(shipyard.Items))
