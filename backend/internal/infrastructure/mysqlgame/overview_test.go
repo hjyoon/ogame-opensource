@@ -2204,6 +2204,38 @@ func TestOverviewRepositoryLoadOverviewEventsEdges(t *testing.T) {
 	}
 }
 
+func TestScanOverviewEventRowAcceptsFloatingFleetResources(t *testing.T) {
+	row := overviewEventRow(
+		11,
+		42,
+		"legor",
+		domaingame.FleetMissionTransport,
+		map[int]int{domaingame.FleetSmallCargo: 2},
+		100,
+		200,
+		3,
+		4,
+	)
+	resourceOffset := 12 + len(domaingame.FleetIDs())
+	row[resourceOffset] = float64(1.191499e+06)
+	row[resourceOffset+1] = 99.6
+	row[resourceOffset+2] = float64(7)
+	rows := fakeRowsFromValues(row)
+	if !rows.Next() {
+		t.Fatal("expected overview event row")
+	}
+
+	scanned, err := scanOverviewEventRow(rows, domaingame.FleetIDs(), overviewTransportableResourceIDs(), 42, 8)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if scanned.Mission.LoadedResources[domaingame.ResourceMetal] != 1_191_499 ||
+		scanned.Mission.LoadedResources[domaingame.ResourceCrystal] != 100 ||
+		scanned.Mission.LoadedResources[domaingame.ResourceDeuterium] != 7 {
+		t.Fatalf("unexpected loaded resources: %+v", scanned.Mission.LoadedResources)
+	}
+}
+
 func TestOverviewRepositoryLoadsACSOverviewEvents(t *testing.T) {
 	queryer := &fakeQueryer{results: []fakeQueryResult{
 		{rows: fakeRowsFromValues()},

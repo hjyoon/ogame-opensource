@@ -1691,7 +1691,7 @@ func scanOverviewEventRow(rows Rows, fleetIDs []int, resourceIDs []int, playerID
 	var startPlanetID int
 	var targetPlanetID int
 	shipValues := make([]int, len(fleetIDs))
-	resourceValues := make([]int, len(resourceIDs))
+	resourceValues := make([]float64, len(resourceIDs))
 	var origin domaingame.Coordinates
 	var originName string
 	var target domaingame.Coordinates
@@ -1728,7 +1728,7 @@ func scanOverviewEventRow(rows Rows, fleetIDs []int, resourceIDs []int, playerID
 	}
 	loadedResources := make(map[int]int, len(resourceIDs))
 	for index, resourceID := range resourceIDs {
-		loadedResources[resourceID] = resourceValues[index]
+		loadedResources[resourceID] = int(math.Round(resourceValues[index]))
 	}
 	event := domaingame.BuildFleetMission(id, mission, ships, origin, target, targetType, targetOwner, departureAt, arrivalAt)
 	event.LoadedResources = loadedResources
