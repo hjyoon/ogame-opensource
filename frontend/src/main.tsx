@@ -587,7 +587,7 @@ function App() {
       credentials: "same-origin",
       signal: controller.signal
     })
-      .then((response) => response.json() as Promise<GameOverviewStatus>)
+      .then((response) => readAPIJSON<GameOverviewStatus>(response, "overview", [401]))
       .then((payload) => {
         setGameOverview(payload);
         if (!background) {

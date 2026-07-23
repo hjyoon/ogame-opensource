@@ -1402,7 +1402,9 @@ func TestGameOverviewEndpointReturnsUnavailableWithoutUseCase(t *testing.T) {
 }
 
 func TestGameOverviewEndpointReturnsUnavailableForUseCaseError(t *testing.T) {
-	server := testServerWithGameOverview(t, &fakeGameOverview{err: errors.New("overview failed")})
+	var logs bytes.Buffer
+	logger := slog.New(slog.NewJSONHandler(&logs, nil))
+	server := testServerWithGameOverviewAndLogger(t, &fakeGameOverview{err: errors.New("overview failed")}, logger)
 	req := httptest.NewRequest(http.MethodGet, "/api/game/overview?session=public", nil)
 	rec := httptest.NewRecorder()
 	server.ServeHTTP(rec, req)
@@ -1410,12 +1412,35 @@ func TestGameOverviewEndpointReturnsUnavailableForUseCaseError(t *testing.T) {
 	if rec.Code != http.StatusServiceUnavailable {
 		t.Fatalf("expected game overview error to return 503, got %d", rec.Code)
 	}
+	var response gameOverviewErrorResponse
+	if err := json.Unmarshal(rec.Body.Bytes(), &response); err != nil {
+		t.Fatalf("expected JSON overview error, got %q: %v", rec.Body.String(), err)
+	}
+	if response.Error != "Game overview is temporarily unavailable." {
+		t.Fatalf("unexpected overview error response: %+v", response)
+	}
+	if rec.Header().Get("Content-Type") != "application/json; charset=utf-8" {
+		t.Fatalf("unexpected overview error content type: %q", rec.Header().Get("Content-Type"))
+	}
+	var errorEvent map[string]any
+	firstLog := strings.Split(strings.TrimSpace(logs.String()), "\n")[0]
+	if err := json.Unmarshal([]byte(firstLog), &errorEvent); err != nil {
+		t.Fatalf("expected JSON overview error log, got %q: %v", firstLog, err)
+	}
+	if errorEvent["msg"] != "game overview request failed" ||
+		errorEvent["operation"] != "get" ||
+		errorEvent["error"] != "overview failed" {
+		t.Fatalf("unexpected overview error log: %+v", errorEvent)
+	}
 
 	req = httptest.NewRequest(http.MethodPost, "/api/game/overview?session=public", strings.NewReader(`{"action":"rename","name":"New Colony"}`))
 	rec = httptest.NewRecorder()
 	server.ServeHTTP(rec, req)
 	if rec.Code != http.StatusServiceUnavailable {
 		t.Fatalf("expected game overview rename error to return 503, got %d", rec.Code)
+	}
+	if err := json.Unmarshal(rec.Body.Bytes(), &response); err != nil || response.Error == "" {
+		t.Fatalf("expected JSON overview rename error, got %q: %v", rec.Body.String(), err)
 	}
 }
 
@@ -5565,6 +5590,10 @@ func testServerWithLogout(t *testing.T, logout LogoutUseCase) http.Handler {
 }
 
 func testServerWithGameOverview(t *testing.T, overview GameOverviewUseCase) http.Handler {
+	return testServerWithGameOverviewAndLogger(t, overview, nil)
+}
+
+func testServerWithGameOverviewAndLogger(t *testing.T, overview GameOverviewUseCase, logger *slog.Logger) http.Handler {
 	t.Helper()
 	universes := apppublicsite.NewUniverseCatalogService(configcatalog.UniverseCatalog{LegacyBaseURL: "http://legacy.local"})
 	return New(Dependencies{
@@ -5574,6 +5603,7 @@ func testServerWithGameOverview(t *testing.T, overview GameOverviewUseCase) http
 		GameOverview:       overview,
 		Frontend:           filesystem.StaticDir{Root: t.TempDir()},
 		LegacyAssets:       filesystem.NewNoListingFS(t.TempDir()),
+		Logger:             logger,
 	})
 }
 

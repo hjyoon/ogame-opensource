@@ -70,6 +70,58 @@ func TestFinishDueQueueTaskAtomicallyRunsConcurrentClaimOnce(t *testing.T) {
 	assertQueueCompletionCount(t, db, "SELECT COUNT(*) FROM uni1_queue WHERE task_id = 77", 0)
 }
 
+func TestFinishDueQueueTaskAtomicallySharesSQLiteMutationLock(t *testing.T) {
+	db := openQueueCompletionSQLite(t)
+	defer db.Close()
+	if _, err := db.Exec("INSERT INTO uni1_queue (task_id, owner_id, type, sub_id, obj_id, level, start, end, prio, freeze, frozen) VALUES (78, 1, 'Fleet', 9, 0, 0, 0, 100, 0, 0, 0)"); err != nil {
+		t.Fatal(err)
+	}
+
+	unlock, err := acquireProcessDatabaseLock(context.Background(), db, "mutation", "mutation lock timeout")
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer unlock()
+
+	type completionResult struct {
+		claimed bool
+		err     error
+	}
+	done := make(chan completionResult, 1)
+	runner := SQLQueryer{DB: db}
+	go func() {
+		claimed, err := finishDueQueueTaskAtomically(
+			context.Background(),
+			runner,
+			runner,
+			"`uni1_queue`",
+			dueQueueTaskClaim{TaskID: 78, Type: queueTypeFleet, End: 100},
+			100,
+			func(_ Queryer, execer Execer) error {
+				_, err := execer.ExecContext(context.Background(), "DELETE FROM uni1_queue WHERE task_id = ?", 78)
+				return err
+			},
+		)
+		done <- completionResult{claimed: claimed, err: err}
+	}()
+
+	select {
+	case result := <-done:
+		t.Fatalf("queue completion bypassed SQLite mutation lock: %+v", result)
+	case <-time.After(50 * time.Millisecond):
+	}
+
+	unlock()
+	select {
+	case result := <-done:
+		if result.err != nil || !result.claimed {
+			t.Fatalf("queue completion after unlock: %+v", result)
+		}
+	case <-time.After(2 * time.Second):
+		t.Fatal("queue completion did not resume after SQLite mutation unlock")
+	}
+}
+
 func TestFinishDueQueueTaskAtomicallyRollsBackClaimAndSideEffects(t *testing.T) {
 	db := openQueueCompletionSQLite(t)
 	defer db.Close()

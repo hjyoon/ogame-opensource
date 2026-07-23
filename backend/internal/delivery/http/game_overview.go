@@ -16,6 +16,10 @@ type gameOverviewResponse struct {
 	ActionIssue   *gameOverviewActionIssue   `json:"actionIssue,omitempty"`
 }
 
+type gameOverviewErrorResponse struct {
+	Error string `json:"error"`
+}
+
 type gameOverviewActionIssue struct {
 	Code    string `json:"code"`
 	Message string `json:"message"`
@@ -138,7 +142,7 @@ func (a app) handleGameOverview(w http.ResponseWriter, r *http.Request) {
 
 func (a app) handleGameOverviewGet(w http.ResponseWriter, r *http.Request) {
 	if a.deps.GameOverview == nil {
-		http.Error(w, "game overview unavailable", http.StatusServiceUnavailable)
+		a.writeGameOverviewUnavailable(w, r, "get", 0, nil)
 		return
 	}
 
@@ -156,7 +160,7 @@ func (a app) handleGameOverviewGet(w http.ResponseWriter, r *http.Request) {
 		Login:           hasOverviewLoginMarker(r),
 	})
 	if err != nil {
-		http.Error(w, "game overview unavailable", http.StatusServiceUnavailable)
+		a.writeGameOverviewUnavailable(w, r, "get", planetID, err)
 		return
 	}
 
@@ -170,7 +174,7 @@ func hasOverviewLoginMarker(r *http.Request) bool {
 
 func (a app) handleGameOverviewPost(w http.ResponseWriter, r *http.Request) {
 	if a.deps.GameOverview == nil {
-		http.Error(w, "game overview unavailable", http.StatusServiceUnavailable)
+		a.writeGameOverviewUnavailable(w, r, "mutation", 0, nil)
 		return
 	}
 
@@ -212,11 +216,24 @@ func (a app) handleGameOverviewPost(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	if err != nil {
-		http.Error(w, "game overview unavailable", http.StatusServiceUnavailable)
+		a.writeGameOverviewUnavailable(w, r, mutation.Action, planetID, err)
 		return
 	}
 
 	writeGameOverviewResponse(w, result)
+}
+
+func (a app) writeGameOverviewUnavailable(w http.ResponseWriter, r *http.Request, operation string, planetID int, err error) {
+	if err != nil && a.deps.Logger != nil {
+		a.deps.Logger.ErrorContext(r.Context(), "game overview request failed",
+			"operation", operation,
+			"planet_id", planetID,
+			"error", err,
+		)
+	}
+	w.Header().Set("Content-Type", "application/json; charset=utf-8")
+	w.WriteHeader(http.StatusServiceUnavailable)
+	_ = json.NewEncoder(w).Encode(gameOverviewErrorResponse{Error: "Game overview is temporarily unavailable."})
 }
 
 func decodeGameOverviewMutation(r *http.Request) (gameOverviewMutationRequest, error) {

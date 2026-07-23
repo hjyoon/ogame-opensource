@@ -23,6 +23,12 @@ func finishDueQueueTaskAtomically(
 	until int,
 	finish func(Queryer, Execer) error,
 ) (bool, error) {
+	unlock, err := acquireQueueCompletionLock(ctx, queryer)
+	if err != nil {
+		return false, err
+	}
+	defer unlock()
+
 	txer := queueTransactionRunner(queryer, execer)
 	if txer == nil {
 		// Repository unit-test runners are intentionally lightweight. Runtime
@@ -31,7 +37,7 @@ func finishDueQueueTaskAtomically(
 	}
 
 	claimed := false
-	err := txer.WithTransaction(ctx, func(txQueryer Queryer, txExecer Execer) error {
+	err = txer.WithTransaction(ctx, func(txQueryer Queryer, txExecer Execer) error {
 		ok, err := claimDueQueueTask(ctx, txQueryer, txExecer, queueTable, claim, until)
 		if err != nil || !ok {
 			return err
@@ -40,6 +46,14 @@ func finishDueQueueTaskAtomically(
 		return finish(txQueryer, txExecer)
 	})
 	return claimed, err
+}
+
+func acquireQueueCompletionLock(ctx context.Context, queryer Queryer) (func(), error) {
+	db := (BuildingsRepository{queryer: queryer}).sqlDB()
+	if db == nil || detectSQLDialect(db) != DialectSQLite {
+		return func() {}, nil
+	}
+	return acquireProcessDatabaseLock(ctx, db, "queue-completion", "queue completion lock timeout")
 }
 
 func queueTransactionRunner(queryer Queryer, execer Execer) transactionRunner {
