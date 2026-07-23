@@ -1444,6 +1444,22 @@ func TestGameOverviewEndpointReturnsUnavailableForUseCaseError(t *testing.T) {
 	}
 }
 
+func TestGameOverviewEndpointIgnoresCanceledRequest(t *testing.T) {
+	var logs bytes.Buffer
+	logger := slog.New(slog.NewJSONHandler(&logs, nil))
+	server := testServerWithGameOverviewAndLogger(t, &fakeGameOverview{err: context.Canceled}, logger)
+	req := httptest.NewRequest(http.MethodGet, "/api/game/overview?session=public", nil)
+	rec := httptest.NewRecorder()
+	server.ServeHTTP(rec, req)
+
+	if rec.Code != http.StatusOK || rec.Body.Len() != 0 {
+		t.Fatalf("expected canceled request to end without a response, got status=%d body=%q", rec.Code, rec.Body.String())
+	}
+	if strings.Contains(logs.String(), "game overview request failed") {
+		t.Fatalf("canceled overview request must not emit an error log: %s", logs.String())
+	}
+}
+
 func TestGameBuildingsEndpointReturnsBuildings(t *testing.T) {
 	buildings := &fakeGameBuildings{result: appgame.BuildingsResult{
 		Authenticated: true,

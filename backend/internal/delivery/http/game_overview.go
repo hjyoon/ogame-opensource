@@ -1,7 +1,9 @@
 package httpdelivery
 
 import (
+	"context"
 	"encoding/json"
+	"errors"
 	"net/http"
 	"strconv"
 
@@ -224,6 +226,9 @@ func (a app) handleGameOverviewPost(w http.ResponseWriter, r *http.Request) {
 }
 
 func (a app) writeGameOverviewUnavailable(w http.ResponseWriter, r *http.Request, operation string, planetID int, err error) {
+	if errors.Is(err, context.Canceled) || errors.Is(r.Context().Err(), context.Canceled) {
+		return
+	}
 	if err != nil && a.deps.Logger != nil {
 		a.deps.Logger.ErrorContext(r.Context(), "game overview request failed",
 			"operation", operation,
