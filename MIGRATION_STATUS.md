@@ -14,7 +14,7 @@ React/Bun + Go migration tracker. Keep under 4KB; split details by topic.
 - Game mutations preserve math, permissions, effects, reports, and scheduler behavior through PHP/Go differential cases; due queues are atomically settled by a configurable background worker.
 - MCP supports Player, Operator, and Admin tokens with live role checks, scope-authorized mutations, an in-game guide, and explicit queue duration/start/finish/remaining/status fields; visual comparisons exclude its Go-only UI.
 - The Go runtime supports MySQL by default and persistent SQLite as an optional pure-Go mode; see [SQLite](./SQLITE.md).
-- SQLite due-queue settlement shares the mutation write lock; Overview failures return JSON and log their internal cause.
+- SQLite due-queue settlement shares the mutation write lock, seeds rapid fire enabled, and logs JSON Overview failures.
 - One multi-target `Dockerfile` and one `docker-compose.yml` define the PHP oracle and both Go database modes.
 - Modernization candidates stay in [MODERNIZATION_OPTIONS.md](./MODERNIZATION_OPTIONS.md).
 

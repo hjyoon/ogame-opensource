@@ -41,12 +41,12 @@ func TestBootstrapCreatesReadyDatabasesAndIsIdempotent(t *testing.T) {
 		t.Fatalf("unexpected master universe: %d %q %q", number, databaseName, publicURL)
 	}
 
-	var userCount, galaxyCount int
-	if err := universe.QueryRowContext(ctx, "SELECT usercount, galaxies FROM u7_uni WHERE num = 7").Scan(&userCount, &galaxyCount); err != nil {
+	var userCount, galaxyCount, rapidFire int
+	if err := universe.QueryRowContext(ctx, "SELECT usercount, galaxies, rapid FROM u7_uni WHERE num = 7").Scan(&userCount, &galaxyCount, &rapidFire); err != nil {
 		t.Fatal(err)
 	}
-	if userCount != 1 || galaxyCount != 9 {
-		t.Fatalf("unexpected universe seed: users=%d galaxies=%d", userCount, galaxyCount)
+	if userCount != 1 || galaxyCount != 9 || rapidFire != 1 {
+		t.Fatalf("unexpected universe seed: users=%d galaxies=%d rapid=%d", userCount, galaxyCount, rapidFire)
 	}
 	var name, email, password string
 	var admin int
@@ -73,6 +73,22 @@ func TestBootstrapCreatesReadyDatabasesAndIsIdempotent(t *testing.T) {
 	id, err := result.LastInsertId()
 	if err != nil || id != 10000 {
 		t.Fatalf("expected legacy message sequence 10000, got %d err=%v", id, err)
+	}
+}
+
+func TestBootstrapCanExplicitlyDisableRapidFire(t *testing.T) {
+	ctx := context.Background()
+	universe := openTestDatabase(t)
+	rapidFire := false
+	if err := BootstrapUniverse(ctx, universe, BootstrapOptions{Prefix: "u1_", RapidFire: &rapidFire}); err != nil {
+		t.Fatal(err)
+	}
+	var stored int
+	if err := universe.QueryRowContext(ctx, "SELECT rapid FROM u1_uni").Scan(&stored); err != nil {
+		t.Fatal(err)
+	}
+	if stored != 0 {
+		t.Fatalf("expected disabled rapid fire, got %d", stored)
 	}
 }
 

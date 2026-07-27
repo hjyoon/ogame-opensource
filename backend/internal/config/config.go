@@ -52,6 +52,7 @@ type Config struct {
 	UniDBPrefix          string
 	UniDBSecret          string
 	UniNumber            int
+	UniRapidFire         bool
 	DBMaxOpenConns       int
 	DBMaxIdleConns       int
 	DBConnMaxLifetimeSec int
@@ -101,6 +102,7 @@ func Load() Config {
 		UniDBPrefix:          env("OGAME_UNI_DB_PREFIX", "uni1_"),
 		UniDBSecret:          env("OGAME_UNI_DB_SECRET", "docker-secret"),
 		UniNumber:            envInt("OGAME_UNI_NUMBER", 1),
+		UniRapidFire:         envBool("OGAME_UNI_RAPID", true),
 		DBMaxOpenConns:       envInt("OGAME_DB_MAX_OPEN_CONNS", 25),
 		DBMaxIdleConns:       envInt("OGAME_DB_MAX_IDLE_CONNS", 5),
 		DBConnMaxLifetimeSec: envInt("OGAME_DB_CONN_MAX_LIFETIME_SECONDS", 1800),

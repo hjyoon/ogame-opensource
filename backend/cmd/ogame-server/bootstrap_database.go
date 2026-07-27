@@ -63,6 +63,7 @@ func openSQLiteDatabasePools(cfg config.Config, logger *slog.Logger, pools datab
 		PublicBaseURL: cfg.PublicBaseURL,
 		AdminEmail:    cfg.SQLiteAdminEmail,
 		AdminPassword: cfg.SQLiteAdminPassword,
+		RapidFire:     &cfg.UniRapidFire,
 	}
 	ctx, cancel := context.WithTimeout(context.Background(), 30*time.Second)
 	defer cancel()

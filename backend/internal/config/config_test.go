@@ -42,6 +42,7 @@ func TestLoadDefaults(t *testing.T) {
 	t.Setenv("OGAME_UNI_DB_PREFIX", "")
 	t.Setenv("OGAME_UNI_DB_SECRET", "")
 	t.Setenv("OGAME_UNI_NUMBER", "")
+	t.Setenv("OGAME_UNI_RAPID", "")
 	t.Setenv("OGAME_DB_MAX_OPEN_CONNS", "")
 	t.Setenv("OGAME_DB_MAX_IDLE_CONNS", "")
 	t.Setenv("OGAME_DB_CONN_MAX_LIFETIME_SECONDS", "")
@@ -68,7 +69,7 @@ func TestLoadDefaults(t *testing.T) {
 	if !cfg.MasterDBEnabled || cfg.MasterDBHost != "mysql" || cfg.MasterDBUser != "root" || cfg.MasterDBPassword != "123" || cfg.MasterDBName != "master" {
 		t.Fatalf("unexpected default master DB config: %+v", cfg)
 	}
-	if !cfg.UniDBEnabled || cfg.UniDBHost != "mysql" || cfg.UniDBUser != "root" || cfg.UniDBPassword != "123" || cfg.UniDBName != "uni" || cfg.UniDBPrefix != "uni1_" || cfg.UniDBSecret != "docker-secret" || cfg.UniNumber != 1 {
+	if !cfg.UniDBEnabled || cfg.UniDBHost != "mysql" || cfg.UniDBUser != "root" || cfg.UniDBPassword != "123" || cfg.UniDBName != "uni" || cfg.UniDBPrefix != "uni1_" || cfg.UniDBSecret != "docker-secret" || cfg.UniNumber != 1 || !cfg.UniRapidFire {
 		t.Fatalf("unexpected default universe DB config: %+v", cfg)
 	}
 	if cfg.DBMaxOpenConns != 25 || cfg.DBMaxIdleConns != 5 || cfg.DBConnMaxLifetimeSec != 1800 || cfg.QueuePollIntervalMS != 1000 {
@@ -116,6 +117,7 @@ func TestLoadEnvOverrides(t *testing.T) {
 	t.Setenv("OGAME_UNI_DB_PREFIX", "u2_")
 	t.Setenv("OGAME_UNI_DB_SECRET", "legacy-secret")
 	t.Setenv("OGAME_UNI_NUMBER", "2")
+	t.Setenv("OGAME_UNI_RAPID", "0")
 	t.Setenv("OGAME_DB_MAX_OPEN_CONNS", "40")
 	t.Setenv("OGAME_DB_MAX_IDLE_CONNS", "8")
 	t.Setenv("OGAME_DB_CONN_MAX_LIFETIME_SECONDS", "900")
@@ -141,7 +143,7 @@ func TestLoadEnvOverrides(t *testing.T) {
 	if cfg.MasterDBEnabled || cfg.MasterDBHost != "db.local:3307" || cfg.MasterDBUser != "ogame" || cfg.MasterDBPassword != "secret" || cfg.MasterDBName != "master_test" {
 		t.Fatalf("unexpected master DB override: %+v", cfg)
 	}
-	if cfg.UniDBEnabled || cfg.UniDBHost != "uni-db.local:3307" || cfg.UniDBUser != "uni" || cfg.UniDBPassword != "uni-secret" || cfg.UniDBName != "uni_test" || cfg.UniDBPrefix != "u2_" || cfg.UniDBSecret != "legacy-secret" || cfg.UniNumber != 2 {
+	if cfg.UniDBEnabled || cfg.UniDBHost != "uni-db.local:3307" || cfg.UniDBUser != "uni" || cfg.UniDBPassword != "uni-secret" || cfg.UniDBName != "uni_test" || cfg.UniDBPrefix != "u2_" || cfg.UniDBSecret != "legacy-secret" || cfg.UniNumber != 2 || cfg.UniRapidFire {
 		t.Fatalf("unexpected universe DB override: %+v", cfg)
 	}
 	if cfg.DBMaxOpenConns != 40 || cfg.DBMaxIdleConns != 8 || cfg.DBConnMaxLifetimeSec != 900 || cfg.QueuePollIntervalMS != 250 {

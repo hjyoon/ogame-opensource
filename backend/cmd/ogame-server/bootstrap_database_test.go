@@ -46,6 +46,7 @@ func TestOpenSQLiteDatabasePoolsBootstrapsBothDatabases(t *testing.T) {
 		UniDBPrefix:         "uni1_",
 		UniDBSecret:         "secret",
 		UniNumber:           1,
+		UniRapidFire:        true,
 		PublicBaseURL:       "http://localhost:8080",
 	}
 	logger := slog.New(slog.NewTextHandler(io.Discard, nil))
@@ -63,6 +64,13 @@ func TestOpenSQLiteDatabasePoolsBootstrapsBothDatabases(t *testing.T) {
 	}
 	if count != 2 {
 		t.Fatalf("expected seeded SQLite users, got %d", count)
+	}
+	var rapidFire int
+	if err := pools.universe.QueryRowContext(context.Background(), "SELECT rapid FROM `uni1_uni`").Scan(&rapidFire); err != nil {
+		t.Fatal(err)
+	}
+	if rapidFire != 1 {
+		t.Fatalf("expected seeded rapid fire enabled, got %d", rapidFire)
 	}
 	master, universe, mods := pools.readinessProbes("uni1_")
 	if master == nil || universe == nil || mods != nil {

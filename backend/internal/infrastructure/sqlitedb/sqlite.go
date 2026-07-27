@@ -40,6 +40,7 @@ type BootstrapOptions struct {
 	PublicBaseURL string
 	AdminEmail    string
 	AdminPassword string
+	RapidFire     *bool
 	Now           time.Time
 }
 
@@ -143,7 +144,11 @@ func seedUniverse(ctx context.Context, tx *sql.Tx, options BootstrapOptions) err
 	uni := quote(prefix + "uni")
 	users := quote(prefix + "users")
 	planets := quote(prefix + "planets")
-	if _, err := tx.ExecContext(ctx, "INSERT OR IGNORE INTO "+uni+" (num,speed,fspeed,galaxies,systems,maxusers,acs,fid,did,rapid,moons,defrepair,defrepair_delta,usercount,freeze,news1,news2,news_until,startdate,battle_engine,lang,hacks,ext_board,ext_discord,ext_tutorial,ext_rules,ext_impressum,php_battle,battle_max,force_lang,start_dm,max_werf,feedage,modlist) VALUES (?,1,1,9,499,12500,4,30,0,0,0,70,10,1,0,'','',0,?,'../cgi-bin/battle','en',0,'','','','','',0,1000000,0,0,999,60,'')", universeNumber(options.Universe), unix); err != nil {
+	rapidFire := 1
+	if options.RapidFire != nil && !*options.RapidFire {
+		rapidFire = 0
+	}
+	if _, err := tx.ExecContext(ctx, "INSERT OR IGNORE INTO "+uni+" (num,speed,fspeed,galaxies,systems,maxusers,acs,fid,did,rapid,moons,defrepair,defrepair_delta,usercount,freeze,news1,news2,news_until,startdate,battle_engine,lang,hacks,ext_board,ext_discord,ext_tutorial,ext_rules,ext_impressum,php_battle,battle_max,force_lang,start_dm,max_werf,feedage,modlist) VALUES (?,1,1,9,499,12500,4,30,0,?,0,70,10,1,0,'','',0,?,'../cgi-bin/battle','en',0,'','','','','',0,1000000,0,0,999,60,'')", universeNumber(options.Universe), rapidFire, unix); err != nil {
 		return err
 	}
 	if err := seedUser(ctx, tx, users, userSpace, "space", "space", "", legacyPassword("space", options.Secret), 2, 1, 0, unix); err != nil {
