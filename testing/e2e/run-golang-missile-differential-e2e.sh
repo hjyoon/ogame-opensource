@@ -84,6 +84,15 @@ seed_case() {
       db_query "UPDATE uni1_planets SET \`502\`=1 WHERE planet_id=$target_planet; INSERT INTO uni1_planets (name,type,g,s,p,owner_id,diameter,temp,fields,maxfields,date,\`700\`,\`701\`,\`702\`,lastpeek,lastakt,gate_until,remove,\`401\`) VALUES ('MissileMoon',0,$target_g,$target_s,$target_p,$target_id,8000,-20,0,1,UNIX_TIMESTAMP(),0,0,0,UNIX_TIMESTAMP(),UNIX_TIMESTAMP(),0,0,20); SET @moon=LAST_INSERT_ID()" >/dev/null
       destination="$(db_query "SELECT planet_id FROM uni1_planets WHERE g=$target_g AND s=$target_s AND p=$target_p AND type=0 ORDER BY planet_id DESC LIMIT 1")"
       ;;
+    target_*)
+      amount=1
+      primary="${name#target_}"
+      if [ "$primary" = 401 ]; then
+        db_query "UPDATE uni1_planets SET \`401\`=1,\`402\`=100 WHERE planet_id=$target_planet" >/dev/null
+      else
+        db_query "UPDATE uni1_planets SET \`401\`=100,\`$primary\`=1 WHERE planet_id=$target_planet" >/dev/null
+      fi
+      ;;
   esac
   db_query "INSERT INTO uni1_fleet (owner_id,union_id,fuel,mission,start_planet,target_planet,flight_time,deploy_time,ipm_amount,ipm_target) VALUES ($attacker_id,0,0,20,$attacker_planet,$destination,300,0,$amount,$primary); SET @fleet=LAST_INSERT_ID(); INSERT INTO uni1_queue (owner_id,type,sub_id,obj_id,level,start,end,prio) VALUES ($attacker_id,'Fleet',@fleet,0,0,UNIX_TIMESTAMP()-301,UNIX_TIMESTAMP()-1,1520)" >/dev/null
 }
@@ -128,7 +137,7 @@ run_side() {
 }
 
 results='[]'; pass=true
-for case_name in full partial plasma sweep moon; do
+for case_name in full partial plasma sweep moon target_401 target_402 target_403 target_404 target_405 target_406 target_407 target_408; do
   legacy="$(run_side legacy "$case_name")"
   go="$(run_side go "$case_name")"
   case_pass=true
@@ -140,6 +149,20 @@ for case_name in full partial plasma sweep moon; do
     plasma) printf '%s' "$legacy" | jq -e '(.state.planets|map(select(.name=="MissileTarget"))[0].plasma)==2' >/dev/null || case_pass=false ;;
     sweep) printf '%s' "$legacy" | jq -e '(.state.planets|map(select(.name=="MissileTarget"))[0]) as $p | $p.rocket==0 and $p.light==0' >/dev/null || case_pass=false ;;
     moon) printf '%s' "$legacy" | jq -e '(.state.planets|map(select(.name=="MissileTarget"))[0].abm)==0 and (.state.planets|map(select(.name=="MissileMoon"))[0].rocket)==0' >/dev/null || case_pass=false ;;
+    target_*)
+      case "$case_name" in
+        target_401) primary_field=rocket; blocker_field=light ;;
+        target_402) primary_field=light; blocker_field=rocket ;;
+        target_403) primary_field=heavy; blocker_field=rocket ;;
+        target_404) primary_field=gauss; blocker_field=rocket ;;
+        target_405) primary_field=ion; blocker_field=rocket ;;
+        target_406) primary_field=plasma; blocker_field=rocket ;;
+        target_407) primary_field=smallDome; blocker_field=rocket ;;
+        target_408) primary_field=largeDome; blocker_field=rocket ;;
+      esac
+      printf '%s' "$legacy" | jq -e --arg primary "$primary_field" --arg blocker "$blocker_field" \
+        '(.state.planets|map(select(.name=="MissileTarget"))[0]) as $p | $p[$primary]==0 and $p[$blocker]<100' >/dev/null || case_pass=false
+      ;;
   esac
   [ "$case_pass" = true ] || pass=false
   results="$(printf '%s' "$results" | jq -c --arg name "$case_name" --argjson pass "$case_pass" --argjson legacy "$legacy" --argjson go "$go" '. + [{name:$name,pass:$pass,legacy:$legacy,go:$go}]')"

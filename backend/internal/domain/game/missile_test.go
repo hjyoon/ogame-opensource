@@ -58,3 +58,39 @@ func TestResolveMissileAttackUsesPlanetInterceptorsForMoon(t *testing.T) {
 		t.Fatal("resolver must not mutate input maps")
 	}
 }
+
+func TestResolveMissileAttackPrioritizesEverySelectableDefense(t *testing.T) {
+	for _, primaryID := range []int{
+		DefenseRocketLauncher,
+		DefenseLightLaser,
+		DefenseHeavyLaser,
+		DefenseGaussCannon,
+		DefenseIonCannon,
+		DefensePlasmaTurret,
+		DefenseSmallShieldDome,
+		DefenseLargeShieldDome,
+	} {
+		t.Run(technologyName(primaryID), func(t *testing.T) {
+			blockerID := DefenseRocketLauncher
+			if primaryID == DefenseRocketLauncher {
+				blockerID = DefenseLightLaser
+			}
+			input := MissileAttackInput{
+				Amount:           1,
+				PrimaryDefenseID: primaryID,
+				Target: DefenseCounts{
+					primaryID: 1,
+					blockerID: 100,
+				},
+			}
+
+			result := ResolveMissileAttack(input)
+			if result.Target[primaryID] != 0 {
+				t.Fatalf("primary defense %d was not destroyed first: %+v", primaryID, result.Target)
+			}
+			if result.Target[blockerID] >= 100 {
+				t.Fatalf("remaining damage did not spill over after primary defense %d: %+v", primaryID, result.Target)
+			}
+		})
+	}
+}
