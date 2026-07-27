@@ -224,7 +224,8 @@ func combatUnitShoot(attacker *combatUnit, attackerSlots []CombatSlot, defender 
 
 	hullMax := float64(defenderStats.Structure) * 0.1 * float64(10+defenderSlots[defender.slot].Armour) / 10
 	if float64(defender.hull) <= hullMax*0.7 && defender.shield == 0 {
-		if defender.hull == 0 || boundedCombatRandom(random, 100) >= int(float64(defender.hull)*100/hullMax) {
+		explosionRoll := boundedCombatRandom(random, 100)
+		if explosionRoll >= int(float64(defender.hull)*100/hullMax) || defender.hull == 0 {
 			defender.exploded = true
 		}
 	}

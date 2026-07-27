@@ -35,7 +35,11 @@ func TestResolveCombatFastDrawAfterShieldOnlyShots(t *testing.T) {
 func TestResolveCombatDestroyedUnitStillReturnsFireSameRound(t *testing.T) {
 	attacker := CombatSlot{Units: map[int]int{FleetDeathstar: 1}}
 	defender := CombatSlot{Units: map[int]int{FleetSmallCargo: 1}}
-	result, err := ResolveCombat([]CombatSlot{attacker}, []CombatSlot{defender}, false, CombatMaxRounds, func(int) int { return 0 })
+	randomMaxima := []int{}
+	result, err := ResolveCombat([]CombatSlot{attacker}, []CombatSlot{defender}, false, CombatMaxRounds, func(max int) int {
+		randomMaxima = append(randomMaxima, max)
+		return 0
+	})
 	if err != nil || result.Outcome != CombatAttackerWon || len(result.Rounds) != 1 {
 		t.Fatalf("unexpected one-round combat: %+v err=%v", result, err)
 	}
@@ -45,6 +49,9 @@ func TestResolveCombatDestroyedUnitStillReturnsFireSameRound(t *testing.T) {
 	}
 	if len(round.Defenders[0].Units) != 0 || round.Attackers[0].Units[FleetDeathstar] != 1 {
 		t.Fatalf("unexpected one-round survivors: %+v", round)
+	}
+	if len(randomMaxima) != 3 || randomMaxima[0] != 1 || randomMaxima[1] != 100 || randomMaxima[2] != 1 {
+		t.Fatalf("destroyed units must consume the legacy explosion roll before returning fire: %v", randomMaxima)
 	}
 }
 
