@@ -46,7 +46,29 @@ func TestOpenSQLiteDatabasePoolsBootstrapsBothDatabases(t *testing.T) {
 		UniDBPrefix:         "uni1_",
 		UniDBSecret:         "secret",
 		UniNumber:           1,
+		UniLanguage:         "ko",
+		UniSpeed:            256,
+		UniFleetSpeed:       128,
+		UniGalaxies:         5,
+		UniSystems:          200,
+		UniMaxUsers:         5000,
+		UniStartDarkMatter:  8000,
+		UniACS:              8,
+		UniFID:              40,
+		UniDID:              20,
 		UniRapidFire:        true,
+		UniMoons:            true,
+		UniBattleEngine:     "/opt/battle",
+		UniPHPBattle:        true,
+		UniBattleMax:        2000000,
+		UniForceLanguage:    true,
+		UniMaxShipyard:      500,
+		UniFeedAge:          30,
+		ExtBoard:            "https://board.example",
+		ExtDiscord:          "https://discord.example",
+		ExtTutorial:         "https://tutorial.example",
+		ExtRules:            "https://rules.example",
+		ExtImpressum:        "https://legal.example",
 		PublicBaseURL:       "http://localhost:8080",
 	}
 	logger := slog.New(slog.NewTextHandler(io.Discard, nil))
@@ -65,12 +87,13 @@ func TestOpenSQLiteDatabasePoolsBootstrapsBothDatabases(t *testing.T) {
 	if count != 2 {
 		t.Fatalf("expected seeded SQLite users, got %d", count)
 	}
-	var rapidFire int
-	if err := pools.universe.QueryRowContext(context.Background(), "SELECT rapid FROM `uni1_uni`").Scan(&rapidFire); err != nil {
+	var speed, fleetSpeed, rapidFire int
+	var language, rules string
+	if err := pools.universe.QueryRowContext(context.Background(), "SELECT speed, fspeed, rapid, lang, ext_rules FROM `uni1_uni`").Scan(&speed, &fleetSpeed, &rapidFire, &language, &rules); err != nil {
 		t.Fatal(err)
 	}
-	if rapidFire != 1 {
-		t.Fatalf("expected seeded rapid fire enabled, got %d", rapidFire)
+	if speed != 256 || fleetSpeed != 128 || rapidFire != 1 || language != "ko" || rules != "https://rules.example" {
+		t.Fatalf("unexpected seeded universe settings: speed=%d fleet=%d rapid=%d lang=%q rules=%q", speed, fleetSpeed, rapidFire, language, rules)
 	}
 	master, universe, mods := pools.readinessProbes("uni1_")
 	if master == nil || universe == nil || mods != nil {

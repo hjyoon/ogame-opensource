@@ -40,8 +40,34 @@ type BootstrapOptions struct {
 	PublicBaseURL string
 	AdminEmail    string
 	AdminPassword string
-	RapidFire     *bool
+	Settings      *UniverseSettings
 	Now           time.Time
+}
+
+type UniverseSettings struct {
+	Language        string
+	Speed           int
+	FleetSpeed      int
+	Galaxies        int
+	Systems         int
+	MaxUsers        int
+	StartDarkMatter int
+	ACS             int
+	FID             int
+	DID             int
+	RapidFire       bool
+	Moons           bool
+	BattleEngine    string
+	PHPBattle       bool
+	BattleMax       int
+	ForceLanguage   bool
+	MaxShipyard     int
+	FeedAge         int
+	ExtBoard        string
+	ExtDiscord      string
+	ExtTutorial     string
+	ExtRules        string
+	ExtImpressum    string
 }
 
 func Open(path string) (*sql.DB, error) {
@@ -144,11 +170,39 @@ func seedUniverse(ctx context.Context, tx *sql.Tx, options BootstrapOptions) err
 	uni := quote(prefix + "uni")
 	users := quote(prefix + "users")
 	planets := quote(prefix + "planets")
-	rapidFire := 1
-	if options.RapidFire != nil && !*options.RapidFire {
-		rapidFire = 0
+	settings := defaultUniverseSettings()
+	if options.Settings != nil {
+		settings = *options.Settings
 	}
-	if _, err := tx.ExecContext(ctx, "INSERT OR IGNORE INTO "+uni+" (num,speed,fspeed,galaxies,systems,maxusers,acs,fid,did,rapid,moons,defrepair,defrepair_delta,usercount,freeze,news1,news2,news_until,startdate,battle_engine,lang,hacks,ext_board,ext_discord,ext_tutorial,ext_rules,ext_impressum,php_battle,battle_max,force_lang,start_dm,max_werf,feedage,modlist) VALUES (?,1,1,9,499,12500,4,30,0,?,0,70,10,1,0,'','',0,?,'../cgi-bin/battle','en',0,'','','','','',0,1000000,0,0,999,60,'')", universeNumber(options.Universe), rapidFire, unix); err != nil {
+	if _, err := tx.ExecContext(
+		ctx,
+		"INSERT OR IGNORE INTO "+uni+" (num,speed,fspeed,galaxies,systems,maxusers,acs,fid,did,rapid,moons,defrepair,defrepair_delta,usercount,freeze,news1,news2,news_until,startdate,battle_engine,lang,hacks,ext_board,ext_discord,ext_tutorial,ext_rules,ext_impressum,php_battle,battle_max,force_lang,start_dm,max_werf,feedage,modlist) VALUES (?,?,?,?,?,?,?,?,?,?,?,70,10,1,0,'','',0,?,?,?,0,?,?,?,?,?,?,?,?,?,?,?,'')",
+		universeNumber(options.Universe),
+		settings.Speed,
+		settings.FleetSpeed,
+		settings.Galaxies,
+		settings.Systems,
+		settings.MaxUsers,
+		settings.ACS,
+		settings.FID,
+		settings.DID,
+		boolInt(settings.RapidFire),
+		boolInt(settings.Moons),
+		unix,
+		settings.BattleEngine,
+		settings.Language,
+		settings.ExtBoard,
+		settings.ExtDiscord,
+		settings.ExtTutorial,
+		settings.ExtRules,
+		settings.ExtImpressum,
+		boolInt(settings.PHPBattle),
+		settings.BattleMax,
+		boolInt(settings.ForceLanguage),
+		settings.StartDarkMatter,
+		settings.MaxShipyard,
+		settings.FeedAge,
+	); err != nil {
 		return err
 	}
 	if err := seedUser(ctx, tx, users, userSpace, "space", "space", "", legacyPassword("space", options.Secret), 2, 1, 0, unix); err != nil {
@@ -222,6 +276,33 @@ func universeNumber(number int) int {
 		return 1
 	}
 	return number
+}
+
+func defaultUniverseSettings() UniverseSettings {
+	return UniverseSettings{
+		Language:     "en",
+		Speed:        1,
+		FleetSpeed:   1,
+		Galaxies:     9,
+		Systems:      499,
+		MaxUsers:     12500,
+		ACS:          4,
+		FID:          30,
+		RapidFire:    true,
+		Moons:        true,
+		BattleEngine: "../cgi-bin/battle",
+		PHPBattle:    true,
+		BattleMax:    1000000,
+		MaxShipyard:  999,
+		FeedAge:      60,
+	}
+}
+
+func boolInt(value bool) int {
+	if value {
+		return 1
+	}
+	return 0
 }
 
 func legacyPassword(password string, secret string) string {

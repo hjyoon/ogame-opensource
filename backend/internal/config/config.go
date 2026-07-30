@@ -52,7 +52,29 @@ type Config struct {
 	UniDBPrefix          string
 	UniDBSecret          string
 	UniNumber            int
+	UniLanguage          string
+	UniSpeed             int
+	UniFleetSpeed        int
+	UniGalaxies          int
+	UniSystems           int
+	UniMaxUsers          int
+	UniStartDarkMatter   int
+	UniACS               int
+	UniFID               int
+	UniDID               int
 	UniRapidFire         bool
+	UniMoons             bool
+	UniBattleEngine      string
+	UniPHPBattle         bool
+	UniBattleMax         int
+	UniForceLanguage     bool
+	UniMaxShipyard       int
+	UniFeedAge           int
+	ExtBoard             string
+	ExtDiscord           string
+	ExtTutorial          string
+	ExtRules             string
+	ExtImpressum         string
 	DBMaxOpenConns       int
 	DBMaxIdleConns       int
 	DBConnMaxLifetimeSec int
@@ -101,8 +123,30 @@ func Load() Config {
 		UniDBName:            env("OGAME_UNI_DB_NAME", "uni"),
 		UniDBPrefix:          env("OGAME_UNI_DB_PREFIX", "uni1_"),
 		UniDBSecret:          env("OGAME_UNI_DB_SECRET", "docker-secret"),
-		UniNumber:            envInt("OGAME_UNI_NUMBER", 1),
+		UniNumber:            envInt("OGAME_UNI_NUMBER", envInt("OGAME_UNI_NUM", 1)),
+		UniLanguage:          env("OGAME_UNI_LANG", "en"),
+		UniSpeed:             envInt("OGAME_UNI_SPEED", 1),
+		UniFleetSpeed:        envInt("OGAME_UNI_FLEET_SPEED", 1),
+		UniGalaxies:          envInt("OGAME_UNI_GALAXIES", 9),
+		UniSystems:           envInt("OGAME_UNI_SYSTEMS", 499),
+		UniMaxUsers:          envInt("OGAME_UNI_MAX_USERS", 12500),
+		UniStartDarkMatter:   envInt("OGAME_UNI_START_DM", 0),
+		UniACS:               envInt("OGAME_UNI_ACS", 4),
+		UniFID:               envInt("OGAME_UNI_FID", 30),
+		UniDID:               envInt("OGAME_UNI_DID", 0),
 		UniRapidFire:         envBool("OGAME_UNI_RAPID", true),
+		UniMoons:             envBool("OGAME_UNI_MOONS", true),
+		UniBattleEngine:      env("OGAME_UNI_BATTLE_ENGINE", "../cgi-bin/battle"),
+		UniPHPBattle:         envBool("OGAME_UNI_PHP_BATTLE", true),
+		UniBattleMax:         envInt("OGAME_UNI_BATTLE_MAX", 1000000),
+		UniForceLanguage:     envBool("OGAME_UNI_FORCE_LANG", false),
+		UniMaxShipyard:       envInt("OGAME_UNI_MAX_WERF", 999),
+		UniFeedAge:           envInt("OGAME_UNI_FEED_AGE", 60),
+		ExtBoard:             env("OGAME_EXT_BOARD", ""),
+		ExtDiscord:           env("OGAME_EXT_DISCORD", ""),
+		ExtTutorial:          env("OGAME_EXT_TUTORIAL", ""),
+		ExtRules:             env("OGAME_EXT_RULES", ""),
+		ExtImpressum:         env("OGAME_EXT_IMPRESSUM", ""),
 		DBMaxOpenConns:       envInt("OGAME_DB_MAX_OPEN_CONNS", 25),
 		DBMaxIdleConns:       envInt("OGAME_DB_MAX_IDLE_CONNS", 5),
 		DBConnMaxLifetimeSec: envInt("OGAME_DB_CONN_MAX_LIFETIME_SECONDS", 1800),

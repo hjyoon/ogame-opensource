@@ -16,10 +16,11 @@ Open `http://localhost:8891`. A new volume is initialized with universe 1, Legor
 - Password: `admin`
 - Volume: `ogame-opensource_sqlite_data`
 
-Override the port or initial admin credentials before the first start:
+Override the port, initial admin credentials, or universe settings before the first start:
 
 ```sh
 OGAME_SQLITE_PORT=8892 OGAME_ADMIN_PASSWORD=secret \
+OGAME_UNI_SPEED=4 OGAME_UNI_FLEET_SPEED=2 \
   docker compose up -d --build goapp-sqlite
 ```
 
@@ -37,7 +38,7 @@ Set `OGAME_DB_DRIVER=sqlite`. SQLite mode uses these variables:
 | `OGAME_ADMIN_EMAIL` | `admin@example.local` |
 | `OGAME_ADMIN_PASSWORD` | `admin` |
 
-`OGAME_UNI_DB_PREFIX`, `OGAME_UNI_DB_SECRET`, `OGAME_UNI_NUMBER`, and `OGAME_PUBLIC_BASE_URL` remain common settings. MySQL host, user, password, and database variables are ignored in SQLite mode.
+`OGAME_UNI_DB_PREFIX`, `OGAME_UNI_DB_SECRET`, `OGAME_UNI_NUMBER`, and `OGAME_PUBLIC_BASE_URL` remain common settings. Fresh SQLite universes also honor the legacy `OGAME_UNI_*` and `OGAME_EXT_*` initialization variables from `.env`, including speed, fleet speed, dimensions, ACS/debris rules, moons, battle settings, language, starting dark matter, and external links. MySQL host, user, password, and database variables are ignored in SQLite mode.
 
 With auto-migrate enabled, startup creates missing master/universe tables and indexes, then idempotently installs required base rows. Disabling it requires compatible database files to already exist. This is schema bootstrap, not automatic transfer of existing MySQL data.
 

@@ -6,8 +6,11 @@ COMPOSE=(
   docker compose
   --ansi never
   --progress plain
-  -f "$ROOT_DIR/docker-compose.yml"
 )
+if [[ -f "$ROOT_DIR/.env" ]]; then
+  COMPOSE+=(--env-file "$ROOT_DIR/.env")
+fi
+COMPOSE+=(-f "$ROOT_DIR/docker-compose.yml")
 
 if [[ -t 1 && -z "${NO_COLOR:-}" ]]; then
   RED=$'\033[31m'
@@ -148,11 +151,26 @@ label_for_mode() {
   esac
 }
 
+compose_environment_value() {
+  local wanted="$1"
+  local fallback="$2"
+  local key
+  local value
+
+  while IFS='=' read -r key value; do
+    if [[ "$key" == "$wanted" ]]; then
+      printf '%s\n' "$value"
+      return
+    fi
+  done < <("${COMPOSE[@]}" config --environment 2>/dev/null || true)
+  printf '%s\n' "$fallback"
+}
+
 url_for_mode() {
   case "$1" in
-    golang) printf 'http://localhost:%s\n' "${OGAME_GO_PORT:-8890}" ;;
-    sqlite) printf 'http://localhost:%s\n' "${OGAME_SQLITE_PORT:-8891}" ;;
-    legacy) printf 'http://localhost:%s\n' "${OGAME_LEGACY_PORT:-8888}" ;;
+    golang) printf 'http://localhost:%s\n' "$(compose_environment_value OGAME_GO_PORT 8890)" ;;
+    sqlite) printf 'http://localhost:%s\n' "$(compose_environment_value OGAME_SQLITE_PORT 8891)" ;;
+    legacy) printf 'http://localhost:%s\n' "$(compose_environment_value OGAME_LEGACY_PORT 8888)" ;;
   esac
 }
 

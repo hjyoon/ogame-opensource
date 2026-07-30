@@ -41,12 +41,12 @@ func TestBootstrapCreatesReadyDatabasesAndIsIdempotent(t *testing.T) {
 		t.Fatalf("unexpected master universe: %d %q %q", number, databaseName, publicURL)
 	}
 
-	var userCount, galaxyCount, rapidFire int
-	if err := universe.QueryRowContext(ctx, "SELECT usercount, galaxies, rapid FROM u7_uni WHERE num = 7").Scan(&userCount, &galaxyCount, &rapidFire); err != nil {
+	var userCount, speed, fleetSpeed, galaxyCount, rapidFire, moons, phpBattle int
+	if err := universe.QueryRowContext(ctx, "SELECT usercount, speed, fspeed, galaxies, rapid, moons, php_battle FROM u7_uni WHERE num = 7").Scan(&userCount, &speed, &fleetSpeed, &galaxyCount, &rapidFire, &moons, &phpBattle); err != nil {
 		t.Fatal(err)
 	}
-	if userCount != 1 || galaxyCount != 9 || rapidFire != 1 {
-		t.Fatalf("unexpected universe seed: users=%d galaxies=%d rapid=%d", userCount, galaxyCount, rapidFire)
+	if userCount != 1 || speed != 1 || fleetSpeed != 1 || galaxyCount != 9 || rapidFire != 1 || moons != 1 || phpBattle != 1 {
+		t.Fatalf("unexpected default universe seed: users=%d speed=%d fleet=%d galaxies=%d rapid=%d moons=%d php_battle=%d", userCount, speed, fleetSpeed, galaxyCount, rapidFire, moons, phpBattle)
 	}
 	var name, email, password string
 	var admin int
@@ -79,8 +79,9 @@ func TestBootstrapCreatesReadyDatabasesAndIsIdempotent(t *testing.T) {
 func TestBootstrapCanExplicitlyDisableRapidFire(t *testing.T) {
 	ctx := context.Background()
 	universe := openTestDatabase(t)
-	rapidFire := false
-	if err := BootstrapUniverse(ctx, universe, BootstrapOptions{Prefix: "u1_", RapidFire: &rapidFire}); err != nil {
+	settings := defaultUniverseSettings()
+	settings.RapidFire = false
+	if err := BootstrapUniverse(ctx, universe, BootstrapOptions{Prefix: "u1_", Settings: &settings}); err != nil {
 		t.Fatal(err)
 	}
 	var stored int
@@ -89,6 +90,80 @@ func TestBootstrapCanExplicitlyDisableRapidFire(t *testing.T) {
 	}
 	if stored != 0 {
 		t.Fatalf("expected disabled rapid fire, got %d", stored)
+	}
+}
+
+func TestBootstrapAppliesUniverseSettings(t *testing.T) {
+	ctx := context.Background()
+	universe := openTestDatabase(t)
+	settings := UniverseSettings{
+		Language:        "ko",
+		Speed:           256,
+		FleetSpeed:      128,
+		Galaxies:        5,
+		Systems:         200,
+		MaxUsers:        5000,
+		StartDarkMatter: 8000,
+		ACS:             8,
+		FID:             40,
+		DID:             20,
+		RapidFire:       false,
+		Moons:           false,
+		BattleEngine:    "/opt/battle",
+		PHPBattle:       false,
+		BattleMax:       2000000,
+		ForceLanguage:   true,
+		MaxShipyard:     500,
+		FeedAge:         30,
+		ExtBoard:        "https://board.example",
+		ExtDiscord:      "https://discord.example",
+		ExtTutorial:     "https://tutorial.example",
+		ExtRules:        "https://rules.example",
+		ExtImpressum:    "https://legal.example",
+	}
+	if err := BootstrapUniverse(ctx, universe, BootstrapOptions{Prefix: "u1_", Settings: &settings}); err != nil {
+		t.Fatal(err)
+	}
+
+	var stored UniverseSettings
+	var rapidFire, moons, phpBattle, forceLanguage int
+	err := universe.QueryRowContext(
+		ctx,
+		"SELECT lang,speed,fspeed,galaxies,systems,maxusers,start_dm,acs,fid,did,rapid,moons,battle_engine,php_battle,battle_max,force_lang,max_werf,feedage,ext_board,ext_discord,ext_tutorial,ext_rules,ext_impressum FROM u1_uni",
+	).Scan(
+		&stored.Language,
+		&stored.Speed,
+		&stored.FleetSpeed,
+		&stored.Galaxies,
+		&stored.Systems,
+		&stored.MaxUsers,
+		&stored.StartDarkMatter,
+		&stored.ACS,
+		&stored.FID,
+		&stored.DID,
+		&rapidFire,
+		&moons,
+		&stored.BattleEngine,
+		&phpBattle,
+		&stored.BattleMax,
+		&forceLanguage,
+		&stored.MaxShipyard,
+		&stored.FeedAge,
+		&stored.ExtBoard,
+		&stored.ExtDiscord,
+		&stored.ExtTutorial,
+		&stored.ExtRules,
+		&stored.ExtImpressum,
+	)
+	if err != nil {
+		t.Fatal(err)
+	}
+	stored.RapidFire = rapidFire == 1
+	stored.Moons = moons == 1
+	stored.PHPBattle = phpBattle == 1
+	stored.ForceLanguage = forceLanguage == 1
+	if stored != settings {
+		t.Fatalf("unexpected configured universe seed:\nwant: %+v\ngot:  %+v", settings, stored)
 	}
 }
 
@@ -142,6 +217,9 @@ func TestBootstrapValidationAndHelpers(t *testing.T) {
 	}
 	if universeNumber(0) != 1 || universeNumber(3) != 3 {
 		t.Fatal("unexpected universe number normalization")
+	}
+	if boolInt(true) != 1 || boolInt(false) != 0 {
+		t.Fatal("unexpected boolean integer conversion")
 	}
 	if defaultString("", "fallback") != "fallback" || defaultString("value", "fallback") != "value" {
 		t.Fatal("unexpected default string behavior")
