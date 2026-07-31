@@ -86,6 +86,37 @@ func TestEmpireRepositoryMapsMCPEmpireReadOnly(t *testing.T) {
 	}
 }
 
+func TestEmpireRepositoryProjectsCurrentResourcesWithoutWriting(t *testing.T) {
+	now := time.Unix(4_600, 0)
+	queryer := &fakeQueryer{results: []fakeQueryResult{{
+		rows: fakeRowsFromValues(empireProductionPlanetRow(1_000)),
+	}}}
+	repository := NewEmpireRepositoryWithRunner(queryer, nil, "ogame_", func() time.Time { return now })
+
+	planets, err := repository.loadEmpirePlanets(
+		context.Background(),
+		"`ogame_planets`",
+		42,
+		domaingame.EmpirePlanetTypePlanets,
+		empireUser{},
+		1,
+	)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(planets) != 1 {
+		t.Fatalf("expected one planet, got %+v", planets)
+	}
+	if planets[0].Resources.Metal != 1_053 ||
+		planets[0].Resources.Crystal != 1_010 ||
+		planets[0].Resources.Deuterium != 1_000 {
+		t.Fatalf("expected projected empire resources, got %+v", planets[0])
+	}
+	if len(queryer.calls) != 1 || !strings.Contains(queryer.calls[0].sql, "lastpeek") {
+		t.Fatalf("expected one read-only query including lastpeek, got %+v", queryer.calls)
+	}
+}
+
 func TestEmpireRepositoryReturnsCommanderIssue(t *testing.T) {
 	now := time.Unix(1000, 0)
 	queryer := &fakeQueryer{results: empireReadResults(now, now.Add(-time.Hour).Unix())}
@@ -538,6 +569,7 @@ func empireResearchRow() []any {
 func empirePlanetRow() []any {
 	row := []any{
 		100, "Luna", domaingame.PlanetTypeMoon, 1, 2, 3, 5, 120, -20,
+		int64(0),
 		10.0, 20.0, 30.0,
 		1.0, 1.0, 1.0, 1.0, 1.0, 1.0,
 	}
@@ -550,6 +582,24 @@ func empirePlanetRow() []any {
 			value = 8
 		case domaingame.DefenseRocketLauncher:
 			value = 6
+		}
+		row = append(row, value)
+	}
+	return row
+}
+
+func empireProductionPlanetRow(lastPeek int) []any {
+	row := []any{
+		99, "Arakis", domaingame.PlanetTypePlanet, 1, 2, 3, 5, 120, 19,
+		lastPeek,
+		1_000.0, 1_000.0, 1_000.0,
+		1.0, 0.0, 0.0, 1.0, 0.0, 0.0,
+	}
+	for _, id := range empirePlanetLevelIDs() {
+		value := 0
+		switch id {
+		case domaingame.BuildingMetalMine, domaingame.BuildingSolarPlant:
+			value = 1
 		}
 		row = append(row, value)
 	}

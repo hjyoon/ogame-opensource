@@ -3,7 +3,6 @@ package mysqlgame
 import (
 	"context"
 	"fmt"
-	"math"
 	"time"
 
 	domaingame "github.com/hjyoon/ogame-opensource/backend/internal/domain/game"
@@ -96,10 +95,7 @@ func updatePlanetResources(ctx context.Context, queryer Queryer, execer Execer, 
 			Engineer:          user.EngineerUntil > now.Unix(),
 		},
 	)
-	next := planet.Resources
-	next.Metal = accruedResource(next.Metal, production.Totals.Hour.Metal, diff, float64(next.MetalCapacity))
-	next.Crystal = accruedResource(next.Crystal, production.Totals.Hour.Crystal, diff, float64(next.CrystalCapacity))
-	next.Deuterium = accruedResource(next.Deuterium, production.Totals.Hour.Deuterium, diff, float64(next.DeuteriumCapacity))
+	next := domaingame.AccrueResources(planet.Resources, production.Totals.Hour, diff)
 	_, err = execer.ExecContext(
 		ctx,
 		fmt.Sprintf("UPDATE %s SET `%d` = ?, `%d` = ?, `%d` = ?, lastpeek = ? WHERE planet_id = ? AND owner_id = ? AND lastpeek = ?", planetsTable, resourceMetal, resourceCrystal, resourceDeuterium),
@@ -248,12 +244,4 @@ func loadResourceUpdateUser(ctx context.Context, queryer Queryer, usersTable str
 		return resourceUpdateUser{}, false, err
 	}
 	return user, true, nil
-}
-
-func accruedResource(current float64, hourly float64, seconds int, capacity float64) float64 {
-	if current >= capacity {
-		return current
-	}
-	next := current + hourly*float64(seconds)/3600
-	return math.Min(next, capacity)
 }

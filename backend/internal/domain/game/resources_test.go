@@ -30,6 +30,39 @@ func TestNormalizeProductionSettingsMatchesLegacyResourcePost(t *testing.T) {
 	}
 }
 
+func TestAccrueResourcesProjectsElapsedProductionWithStorageLimits(t *testing.T) {
+	current := Resources{
+		Metal:             1_000,
+		Crystal:           99_990,
+		Deuterium:         120_000,
+		DarkMatter:        7,
+		MetalCapacity:     100_000,
+		CrystalCapacity:   100_000,
+		DeuteriumCapacity: 100_000,
+	}
+	projected := AccrueResources(current, ResourceProductionValues{
+		Metal:     53,
+		Crystal:   20,
+		Deuterium: 10,
+	}, 3600)
+
+	if projected.Metal != 1_053 {
+		t.Fatalf("expected elapsed metal production, got %+v", projected)
+	}
+	if projected.Crystal != 100_000 {
+		t.Fatalf("expected crystal to cap at storage, got %+v", projected)
+	}
+	if projected.Deuterium != 120_000 {
+		t.Fatalf("expected over-capacity deuterium to remain unchanged, got %+v", projected)
+	}
+	if projected.DarkMatter != 7 {
+		t.Fatalf("expected non-produced resources to remain unchanged, got %+v", projected)
+	}
+	if got := AccrueResources(current, ResourceProductionValues{Metal: 53}, 0); got != current {
+		t.Fatalf("expected non-positive elapsed time to be a no-op, got %+v", got)
+	}
+}
+
 func TestBuildResourceProductionUsesLegacyNaturalAndMineFormula(t *testing.T) {
 	overview := resourceOverview(PlanetTypePlanet)
 	production := BuildResourceProduction(overview, ResourceProductionInputs{

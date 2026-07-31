@@ -205,6 +205,26 @@ func BuildResourceProduction(overview Overview, inputs ResourceProductionInputs)
 	return production
 }
 
+// AccrueResources projects resource balances after elapsedSeconds without
+// mutating persisted state. It uses the same storage behavior as legacy
+// production settlement, including preserving resources already over capacity.
+func AccrueResources(current Resources, hourly ResourceProductionValues, elapsedSeconds int) Resources {
+	if elapsedSeconds <= 0 {
+		return current
+	}
+	current.Metal = accrueResource(current.Metal, hourly.Metal, elapsedSeconds, float64(current.MetalCapacity))
+	current.Crystal = accrueResource(current.Crystal, hourly.Crystal, elapsedSeconds, float64(current.CrystalCapacity))
+	current.Deuterium = accrueResource(current.Deuterium, hourly.Deuterium, elapsedSeconds, float64(current.DeuteriumCapacity))
+	return current
+}
+
+func accrueResource(current float64, hourly float64, elapsedSeconds int, capacity float64) float64 {
+	if current >= capacity {
+		return current
+	}
+	return math.Min(current+hourly*float64(elapsedSeconds)/3600, capacity)
+}
+
 func resourceProducerOutputs(planet PlanetOverview, inputs ResourceProductionInputs, speed float64) []producerOutput {
 	levels := inputs.Levels
 	factors := inputs.ProductionFactors

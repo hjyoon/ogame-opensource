@@ -390,7 +390,7 @@ func (r EmpireRepository) loadEmpirePlanets(ctx context.Context, planetsTable st
 	rows, err := r.queryer.QueryContext(
 		ctx,
 		fmt.Sprintf(
-			"SELECT planet_id, name, type, g, s, p, fields, maxfields, temp, `%d`, `%d`, `%d`, prod%d, prod%d, prod%d, prod%d, prod%d, prod%d, %s FROM %s WHERE owner_id = ? AND type = ?%s",
+			"SELECT planet_id, name, type, g, s, p, fields, maxfields, temp, lastpeek, `%d`, `%d`, `%d`, prod%d, prod%d, prod%d, prod%d, prod%d, prod%d, %s FROM %s WHERE owner_id = ? AND type = ?%s",
 			domaingame.ResourceMetal,
 			domaingame.ResourceCrystal,
 			domaingame.ResourceDeuterium,
@@ -412,8 +412,9 @@ func (r EmpireRepository) loadEmpirePlanets(ctx context.Context, planetsTable st
 	}
 	defer rows.Close()
 	planets := []domaingame.EmpirePlanet{}
+	now := int(r.currentTime().Unix())
 	for rows.Next() {
-		planet, err := scanEmpirePlanet(rows, levelIDs, user, speed)
+		planet, err := scanEmpirePlanet(rows, levelIDs, user, speed, now)
 		if err != nil {
 			return nil, err
 		}
@@ -425,9 +426,10 @@ func (r EmpireRepository) loadEmpirePlanets(ctx context.Context, planetsTable st
 	return planets, nil
 }
 
-func scanEmpirePlanet(rows Rows, levelIDs []int, user empireUser, speed float64) (domaingame.EmpirePlanet, error) {
+func scanEmpirePlanet(rows Rows, levelIDs []int, user empireUser, speed float64, now int) (domaingame.EmpirePlanet, error) {
 	var planet domaingame.EmpirePlanet
 	var temperature int
+	var lastPeek int
 	var prodMetal float64
 	var prodCrystal float64
 	var prodDeuterium float64
@@ -445,6 +447,7 @@ func scanEmpirePlanet(rows Rows, levelIDs []int, user empireUser, speed float64)
 		&planet.Fields,
 		&planet.MaxFields,
 		&temperature,
+		&lastPeek,
 		&planet.Resources.Metal,
 		&planet.Resources.Crystal,
 		&planet.Resources.Deuterium,
@@ -506,6 +509,12 @@ func scanEmpirePlanet(rows Rows, levelIDs []int, user empireUser, speed float64)
 		DeuteriumHourly: int(production.Totals.Hour.Deuterium),
 		EnergyBalance:   int(production.Totals.Hour.EnergyRaw),
 		EnergyCapacity:  int(production.Totals.Hour.Energy),
+	}
+	if planet.Type == domaingame.PlanetTypePlanet {
+		planet.Resources.MetalCapacity = storageCapacity(planet.Levels[domaingame.BuildingMetalStorage])
+		planet.Resources.CrystalCapacity = storageCapacity(planet.Levels[domaingame.BuildingCrystalStorage])
+		planet.Resources.DeuteriumCapacity = storageCapacity(planet.Levels[domaingame.BuildingDeuteriumTank])
+		planet.Resources = domaingame.AccrueResources(planet.Resources, production.Totals.Hour, now-lastPeek)
 	}
 	return planet, nil
 }

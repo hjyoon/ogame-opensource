@@ -98,6 +98,7 @@ func TestMCPReadRepositoryGetsPlanetResources(t *testing.T) {
 			99, "Homeworld", domaingame.PlanetTypePlanet, 1, 2, 3,
 			12345.0, 23456.0, 34567.0,
 			40,
+			now.Add(-time.Hour).Unix(),
 			10, 9, 8,
 			10, 8, 6, 12, 2, 5,
 			1.0, 1.0, 1.0, 1.0, 1.0, 1.0,
@@ -114,12 +115,16 @@ func TestMCPReadRepositoryGetsPlanetResources(t *testing.T) {
 	if resources.PlayerID != 42 ||
 		resources.Planet.ID != 99 ||
 		!resources.Planet.Current ||
-		resources.Resources.Metal != 12345 ||
 		resources.Resources.DarkMatter != 1037 ||
 		resources.Capacity.Metal != storageCapacity(10) ||
 		resources.Energy.Capacity <= 0 ||
 		resources.ProductionPerHour.Metal <= 0 {
 		t.Fatalf("unexpected planet resources: %+v", resources)
+	}
+	if resources.Resources.Metal != 12345+resources.ProductionPerHour.Metal ||
+		resources.Resources.Crystal != 23456+resources.ProductionPerHour.Crystal ||
+		resources.Resources.Deuterium != 34567+resources.ProductionPerHour.Deuterium {
+		t.Fatalf("expected read-only current resource projection, got %+v", resources)
 	}
 	if !strings.Contains(queryer.calls[0].sql, "COALESCE(dm, 0)") ||
 		!strings.Contains(queryer.calls[1].sql, "COALESCE(`700`, 0)") ||
@@ -135,6 +140,7 @@ func TestMCPReadRepositoryGetsMoonResourcesWithoutProduction(t *testing.T) {
 			100, "Moon", domaingame.PlanetTypeMoon, 1, 2, 3,
 			100.0, 200.0, 300.0,
 			0,
+			int64(0),
 			10, 9, 8,
 			10, 8, 6, 12, 2, 5,
 			1.0, 1.0, 1.0, 1.0, 1.0, 1.0,
@@ -213,6 +219,7 @@ func TestMCPReadRepositoryPlanetResourcesErrorBranches(t *testing.T) {
 			99, "Homeworld", domaingame.PlanetTypePlanet, 1, 2, 3,
 			1.0, 2.0, 3.0,
 			40,
+			int64(0),
 			0, 0, 0,
 			1, 0, 0, 0, 0, 0,
 			1.0, 0.0, 0.0, 0.0, 0.0, 0.0,

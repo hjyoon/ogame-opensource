@@ -12,7 +12,7 @@ React/Bun + Go migration tracker. Keep under 4KB; split details by topic.
 - Registration, activation, recovery, login/logout, session expiry, private cookies, IP/ban checks, and `/game` redirects are migrated.
 - `/api/game/*` implements overview, economy and queues, fleet/combat, galaxy, social/account, reports, officers/payment, and Admin/Bot operations.
 - Game mutations preserve math, permissions, effects, reports, and scheduler behavior through PHP/Go differential cases; due queues are atomically settled by a configurable background worker.
-- MCP supports Player, Operator, and Admin tokens with live role checks, scope-authorized mutations, an in-game guide, and explicit queue duration/start/finish/remaining/status fields; visual comparisons exclude its Go-only UI.
+- MCP supports scoped Player, Operator, and Admin tokens, live roles, mutations, its in-game guide, queue timing, and read-only current resource projection; visual comparisons exclude its Go-only UI.
 - The Go runtime supports MySQL by default and persistent SQLite as an optional pure-Go mode; see [SQLite](./SQLITE.md).
 - SQLite due-queue settlement shares the mutation lock; bootstrap honors legacy universe environment settings, and Overview failures use JSON logs.
 - One multi-target `Dockerfile` and one `docker-compose.yml` define the PHP oracle and both Go database modes.

@@ -109,17 +109,11 @@ func (r MCPReadRepository) GetMCPPlanetResources(ctx context.Context, playerID i
 		return domainmcp.PlanetResources{}, err
 	}
 	row.planet.Current = row.planet.ID == currentPlanetID
+	planet := row.gamePlanet(account.darkMatter)
 	result := domainmcp.PlanetResources{
 		PlayerID: playerID,
 		Planet:   row.planet,
-		Resources: domainmcp.ResourceAmounts{
-			Metal:      row.metal,
-			Crystal:    row.crystal,
-			Deuterium:  row.deuterium,
-			DarkMatter: account.darkMatter,
-		},
 	}
-	planet := row.gamePlanet(account.darkMatter)
 	if row.planet.Type != domaingame.PlanetTypeMoon {
 		result.Capacity = domainmcp.ResourceCapacity{
 			Metal:     storageCapacity(row.metalStorageLevel),
@@ -166,6 +160,17 @@ func (r MCPReadRepository) GetMCPPlanetResources(ctx context.Context, playerID i
 			Crystal:   production.Totals.Hour.Crystal,
 			Deuterium: production.Totals.Hour.Deuterium,
 		}
+		now := time.Now()
+		if r.now != nil {
+			now = r.now()
+		}
+		planet.Resources = domaingame.AccrueResources(planet.Resources, production.Totals.Hour, int(now.Unix())-row.lastPeek)
+	}
+	result.Resources = domainmcp.ResourceAmounts{
+		Metal:      planet.Resources.Metal,
+		Crystal:    planet.Resources.Crystal,
+		Deuterium:  planet.Resources.Deuterium,
+		DarkMatter: account.darkMatter,
 	}
 	return result, nil
 }
@@ -545,6 +550,7 @@ type mcpPlanetResourceRow struct {
 	crystal               float64
 	deuterium             float64
 	temperature           int
+	lastPeek              int
 	metalStorageLevel     int
 	crystalStorageLevel   int
 	deuteriumStorageLevel int
@@ -566,7 +572,7 @@ func (r MCPReadRepository) loadMCPPlanetResourceRow(ctx context.Context, planets
 	rows, err := r.queryer.QueryContext(
 		ctx,
 		fmt.Sprintf(
-			"SELECT planet_id, name, type, g, s, p, COALESCE(`%d`, 0), COALESCE(`%d`, 0), COALESCE(`%d`, 0), COALESCE(temp, 0), COALESCE(`%d`, 0), COALESCE(`%d`, 0), COALESCE(`%d`, 0), COALESCE(`%d`, 0), COALESCE(`%d`, 0), COALESCE(`%d`, 0), COALESCE(`%d`, 0), COALESCE(`%d`, 0), COALESCE(`%d`, 0), COALESCE(prod%d, 0), COALESCE(prod%d, 0), COALESCE(prod%d, 0), COALESCE(prod%d, 0), COALESCE(prod%d, 0), COALESCE(prod%d, 0) FROM %s WHERE planet_id = ? AND owner_id = ? AND type < ? LIMIT 1",
+			"SELECT planet_id, name, type, g, s, p, COALESCE(`%d`, 0), COALESCE(`%d`, 0), COALESCE(`%d`, 0), COALESCE(temp, 0), COALESCE(lastpeek, 0), COALESCE(`%d`, 0), COALESCE(`%d`, 0), COALESCE(`%d`, 0), COALESCE(`%d`, 0), COALESCE(`%d`, 0), COALESCE(`%d`, 0), COALESCE(`%d`, 0), COALESCE(`%d`, 0), COALESCE(`%d`, 0), COALESCE(prod%d, 0), COALESCE(prod%d, 0), COALESCE(prod%d, 0), COALESCE(prod%d, 0), COALESCE(prod%d, 0), COALESCE(prod%d, 0) FROM %s WHERE planet_id = ? AND owner_id = ? AND type < ? LIMIT 1",
 			domaingame.ResourceMetal,
 			domaingame.ResourceCrystal,
 			domaingame.ResourceDeuterium,
@@ -613,6 +619,7 @@ func (r MCPReadRepository) loadMCPPlanetResourceRow(ctx context.Context, planets
 		&row.crystal,
 		&row.deuterium,
 		&row.temperature,
+		&row.lastPeek,
 		&row.metalStorageLevel,
 		&row.crystalStorageLevel,
 		&row.deuteriumStorageLevel,

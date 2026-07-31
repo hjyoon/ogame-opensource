@@ -365,6 +365,69 @@ func TestSQLiteMCPTokenAndOAuthCodeLifecycle(t *testing.T) {
 	}
 }
 
+func TestSQLiteMCPResourceReadProjectsProductionWithoutPersisting(t *testing.T) {
+	db, err := sqlitedb.Open(":memory:")
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer db.Close()
+	now := time.Now()
+	if err := sqlitedb.BootstrapUniverse(context.Background(), db, sqlitedb.BootstrapOptions{
+		Prefix:        "uni1_",
+		Secret:        "secret",
+		Universe:      1,
+		AdminEmail:    "admin@example.local",
+		AdminPassword: "admin",
+		Now:           now,
+	}); err != nil {
+		t.Fatal(err)
+	}
+	account, err := mysqlregistration.NewAccountCreator(db, "uni1_", "secret").CreateRegistrationAccount(
+		context.Background(),
+		domainpublicsite.RegistrationDraft{
+			Character: "MCPProjection",
+			Password:  "Projection123!",
+			Email:     "mcp-projection@example.local",
+		},
+		"127.0.0.1",
+	)
+	if err != nil {
+		t.Fatal(err)
+	}
+	lastPeek := now.Add(-time.Hour).Unix()
+	if _, err := db.Exec(
+		"UPDATE `uni1_planets` SET `700` = 1000, `701` = 1000, `702` = 1000, `1` = 1, `4` = 1, prod1 = 1, prod4 = 1, lastpeek = ? WHERE planet_id = ?",
+		lastPeek,
+		account.HomePlanetID,
+	); err != nil {
+		t.Fatal(err)
+	}
+
+	resources, err := mysqlgame.NewMCPReadRepository(db, "uni1_").GetMCPPlanetResources(
+		context.Background(),
+		account.PlayerID,
+		account.HomePlanetID,
+	)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if resources.Resources.Metal <= 1_000 || resources.ProductionPerHour.Metal <= 0 {
+		t.Fatalf("expected projected production in read response, got %+v", resources)
+	}
+
+	var storedMetal float64
+	var storedLastPeek int64
+	if err := db.QueryRow(
+		"SELECT `700`, lastpeek FROM `uni1_planets` WHERE planet_id = ?",
+		account.HomePlanetID,
+	).Scan(&storedMetal, &storedLastPeek); err != nil {
+		t.Fatal(err)
+	}
+	if storedMetal != 1_000 || storedLastPeek != lastPeek {
+		t.Fatalf("read-only projection mutated persisted state: metal=%v lastpeek=%d", storedMetal, storedLastPeek)
+	}
+}
+
 func TestSQLiteCouponActivationAcrossMasterAndUniverse(t *testing.T) {
 	master, err := sqlitedb.Open(":memory:")
 	if err != nil {
