@@ -287,10 +287,21 @@ type MessageQuery struct {
 	Limit          int
 	MessageType    int
 	HasMessageType bool
+	Categories     []string
+	MessageTypes   []int
 	IncludeText    bool
+	IncludeSummary bool
 	CursorDate     int64
 	CursorID       int
 	HasCursor      bool
+}
+
+type MessageCategorySummary struct {
+	Category string `json:"category"`
+	Label    string `json:"label"`
+	Total    int    `json:"total"`
+	Unread   int    `json:"unread"`
+	Selected bool   `json:"selected"`
 }
 
 type PlayerMessage struct {
@@ -306,12 +317,13 @@ type PlayerMessage struct {
 }
 
 type MessageList struct {
-	PlayerID   int             `json:"playerId"`
-	Count      int             `json:"count"`
-	Limit      int             `json:"limit"`
-	HasMore    bool            `json:"hasMore"`
-	NextCursor string          `json:"nextCursor"`
-	Messages   []PlayerMessage `json:"messages"`
+	PlayerID   int                      `json:"playerId"`
+	Count      int                      `json:"count"`
+	Limit      int                      `json:"limit"`
+	HasMore    bool                     `json:"hasMore"`
+	NextCursor string                   `json:"nextCursor"`
+	Summary    []MessageCategorySummary `json:"summary,omitempty"`
+	Messages   []PlayerMessage          `json:"messages"`
 }
 
 type MessageDetail struct {

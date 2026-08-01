@@ -391,6 +391,86 @@ func TestMCPReadRepositoryPaginatesMessagesByDateAndID(t *testing.T) {
 	}
 }
 
+func TestMCPReadRepositoryFiltersAndSummarizesCommanderCategories(t *testing.T) {
+	queryer := &fakeQueryer{results: []fakeQueryResult{
+		{rows: fakeRowsFromValues(
+			[]any{11, domaingame.MessageTypeSpyReport, "Scout", "Spy", "", 0, int64(1000)},
+			[]any{10, domaingame.MessageTypeBattleReportLink, "Fleet", "Battle", "", 1, int64(900)},
+		)},
+		{rows: fakeRowsFromValues(
+			[]any{domaingame.MessageTypeSpyReport, 3, 2},
+			[]any{domaingame.MessageTypeBattleReportLink, 4, 1},
+			[]any{domaingame.MessageTypePM, 5, 0},
+		)},
+	}}
+	repository := NewMCPReadRepositoryWithQueryer(queryer, "uni1_")
+	query := domainmcp.MessageQuery{
+		Limit:          2,
+		Categories:     []string{"spy", "battle"},
+		MessageTypes:   []int{domaingame.MessageTypeSpyReport, domaingame.MessageTypeBattleReportLink},
+		IncludeSummary: true,
+	}
+
+	messages, err := repository.ListMCPMessages(context.Background(), 42, query)
+	if err != nil {
+		t.Fatalf("ListMCPMessages returned error: %v", err)
+	}
+	if messages.Count != 2 || len(messages.Summary) != 6 || messages.Summary[0].Category != "spy" || messages.Summary[0].Total != 3 || !messages.Summary[0].Selected || messages.Summary[1].Unread != 1 || !messages.Summary[1].Selected || messages.Summary[4].Selected {
+		t.Fatalf("unexpected categorized messages: %+v", messages)
+	}
+	listCall := queryer.calls[0]
+	if !strings.Contains(listCall.sql, "pm IN (?, ?)") {
+		t.Fatalf("expected category IN filter, got %s", listCall.sql)
+	}
+	wantArgs := []any{42, domaingame.MessageTypeBattleReportText, domaingame.MessageTypeSpyReport, domaingame.MessageTypeBattleReportLink, 3}
+	if !reflect.DeepEqual(listCall.args, wantArgs) {
+		t.Fatalf("category args=%+v want=%+v", listCall.args, wantArgs)
+	}
+	if !strings.Contains(queryer.calls[1].sql, "GROUP BY pm") || !reflect.DeepEqual(queryer.calls[1].args, []any{42, domaingame.MessageTypeBattleReportText}) {
+		t.Fatalf("unexpected summary query: %+v", queryer.calls[1])
+	}
+}
+
+func TestMCPReadRepositoryMessageSummarySelectionAndErrors(t *testing.T) {
+	queryer := &fakeQueryer{results: []fakeQueryResult{
+		{rows: fakeRowsFromValues()},
+		{rows: fakeRowsFromValues([]any{domaingame.MessageTypeExpedition, 2, 1})},
+	}}
+	repository := NewMCPReadRepositoryWithQueryer(queryer, "uni1_")
+	messages, err := repository.ListMCPMessages(context.Background(), 42, domainmcp.MessageQuery{
+		Limit:          1,
+		MessageType:    domaingame.MessageTypeExpedition,
+		HasMessageType: true,
+		IncludeSummary: true,
+	})
+	if err != nil || len(messages.Summary) != 6 || !messages.Summary[2].Selected || messages.Summary[0].Selected {
+		t.Fatalf("unexpected legacy-filter summary: %+v err=%v", messages.Summary, err)
+	}
+
+	wantErr := errors.New("summary failed")
+	repository = NewMCPReadRepositoryWithQueryer(&fakeQueryer{results: []fakeQueryResult{
+		{rows: fakeRowsFromValues()},
+		{err: wantErr},
+	}}, "uni1_")
+	if _, err := repository.ListMCPMessages(context.Background(), 42, domainmcp.MessageQuery{Limit: 1, IncludeSummary: true}); !errors.Is(err, wantErr) {
+		t.Fatalf("expected summary error, got %v", err)
+	}
+
+	for messageType, category := range map[int]string{
+		domaingame.MessageTypeSpyReport:        "spy",
+		domaingame.MessageTypeBattleReportLink: "battle",
+		domaingame.MessageTypeExpedition:       "expedition",
+		domaingame.MessageTypeAlliance:         "alliance",
+		domaingame.MessageTypePM:               "personal",
+		domaingame.MessageTypeMisc:             "other",
+		domaingame.MessageTypeBattleReportText: "other",
+	} {
+		if got := mcpMessageCategoryForType(messageType); got != category {
+			t.Fatalf("message type %d category=%q want=%q", messageType, got, category)
+		}
+	}
+}
+
 func TestMCPMessageTypeNames(t *testing.T) {
 	for _, tt := range []struct {
 		messageType int

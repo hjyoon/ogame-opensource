@@ -2627,7 +2627,7 @@ func (s Service) callListMessages(ctx context.Context, access domainmcp.Access, 
 		return domainmcp.ToolCallResult{}, err
 	}
 	if messages.HasMore && len(messages.Messages) > 0 {
-		messages.NextCursor = encodeMCPMessageCursor(messages.Messages[len(messages.Messages)-1])
+		messages.NextCursor = encodeMCPMessageCursor(messages.Messages[len(messages.Messages)-1], query)
 	}
 	structured := map[string]any{"messages": messages}
 	text, _ := json.Marshal(structured)
@@ -4581,7 +4581,19 @@ func mcpMessageQuery(arguments map[string]any) (domainmcp.MessageQuery, error) {
 	if err != nil {
 		return domainmcp.MessageQuery{}, err
 	}
+	categories, messageTypes, err := mcpMessageCategoriesArgument(arguments)
+	if err != nil {
+		return domainmcp.MessageQuery{}, err
+	}
+	hasMessageType := arguments != nil && arguments["messageType"] != nil
+	if hasMessageType && len(categories) > 0 {
+		return domainmcp.MessageQuery{}, fmt.Errorf("%w: categories and messageType are mutually exclusive", domainmcp.ErrInvalidParams)
+	}
 	includeText, err := optionalBoolArgument(arguments, "includeText")
+	if err != nil {
+		return domainmcp.MessageQuery{}, err
+	}
+	includeSummary, err := optionalBoolArgument(arguments, "includeSummary")
 	if err != nil {
 		return domainmcp.MessageQuery{}, err
 	}
@@ -4592,29 +4604,75 @@ func mcpMessageQuery(arguments map[string]any) (domainmcp.MessageQuery, error) {
 	var cursorDate int64
 	var cursorID int
 	hasCursor := arguments != nil && arguments["cursor"] != nil
+	query := domainmcp.MessageQuery{
+		Limit:          limit,
+		MessageType:    messageType,
+		HasMessageType: hasMessageType,
+		Categories:     categories,
+		MessageTypes:   messageTypes,
+		IncludeText:    includeText,
+		IncludeSummary: includeSummary,
+		HasCursor:      hasCursor,
+	}
 	if hasCursor {
-		cursorDate, cursorID, err = decodeMCPMessageCursor(cursor)
+		cursorDate, cursorID, err = decodeMCPMessageCursor(cursor, query)
 		if err != nil {
 			return domainmcp.MessageQuery{}, err
 		}
 	}
-	return domainmcp.MessageQuery{
-		Limit:          limit,
-		MessageType:    messageType,
-		HasMessageType: arguments != nil && arguments["messageType"] != nil,
-		IncludeText:    includeText,
-		CursorDate:     cursorDate,
-		CursorID:       cursorID,
-		HasCursor:      hasCursor,
-	}, nil
+	query.CursorDate = cursorDate
+	query.CursorID = cursorID
+	return query, nil
 }
 
-func encodeMCPMessageCursor(message domainmcp.PlayerMessage) string {
-	payload := fmt.Sprintf("v1:%d:%d", message.Date, message.ID)
+func mcpMessageCategoriesArgument(arguments map[string]any) ([]string, []int, error) {
+	if arguments == nil || arguments["categories"] == nil {
+		return nil, nil, nil
+	}
+	rawValues, ok := arguments["categories"].([]any)
+	if !ok || len(rawValues) == 0 || len(rawValues) > 6 {
+		return nil, nil, fmt.Errorf("%w: categories must contain between 1 and 6 unique categories", domainmcp.ErrInvalidParams)
+	}
+	typeByCategory := map[string]int{
+		"spy":        domaingame.MessageTypeSpyReport,
+		"battle":     domaingame.MessageTypeBattleReportLink,
+		"expedition": domaingame.MessageTypeExpedition,
+		"alliance":   domaingame.MessageTypeAlliance,
+		"personal":   domaingame.MessageTypePM,
+		"other":      domaingame.MessageTypeMisc,
+	}
+	selected := make(map[string]struct{}, len(rawValues))
+	for _, rawValue := range rawValues {
+		category, ok := rawValue.(string)
+		if !ok {
+			return nil, nil, fmt.Errorf("%w: categories must contain strings", domainmcp.ErrInvalidParams)
+		}
+		if _, exists := typeByCategory[category]; !exists {
+			return nil, nil, fmt.Errorf("%w: unknown message category %q", domainmcp.ErrInvalidParams, category)
+		}
+		if _, exists := selected[category]; exists {
+			return nil, nil, fmt.Errorf("%w: categories must be unique", domainmcp.ErrInvalidParams)
+		}
+		selected[category] = struct{}{}
+	}
+	ordered := []string{"spy", "battle", "expedition", "alliance", "personal", "other"}
+	categories := make([]string, 0, len(selected))
+	messageTypes := make([]int, 0, len(selected))
+	for _, category := range ordered {
+		if _, exists := selected[category]; exists {
+			categories = append(categories, category)
+			messageTypes = append(messageTypes, typeByCategory[category])
+		}
+	}
+	return categories, messageTypes, nil
+}
+
+func encodeMCPMessageCursor(message domainmcp.PlayerMessage, query domainmcp.MessageQuery) string {
+	payload := fmt.Sprintf("v2:%d:%d:%s", message.Date, message.ID, mcpMessageFilterFingerprint(query))
 	return base64.RawURLEncoding.EncodeToString([]byte(payload))
 }
 
-func decodeMCPMessageCursor(cursor string) (int64, int, error) {
+func decodeMCPMessageCursor(cursor string, query domainmcp.MessageQuery) (int64, int, error) {
 	if strings.TrimSpace(cursor) == "" || len(cursor) > 128 {
 		return 0, 0, fmt.Errorf("%w: cursor is invalid", domainmcp.ErrInvalidParams)
 	}
@@ -4623,7 +4681,13 @@ func decodeMCPMessageCursor(cursor string) (int64, int, error) {
 		return 0, 0, fmt.Errorf("%w: cursor is invalid", domainmcp.ErrInvalidParams)
 	}
 	parts := strings.Split(string(payload), ":")
-	if len(parts) != 3 || parts[0] != "v1" {
+	if len(parts) != 3 && len(parts) != 4 {
+		return 0, 0, fmt.Errorf("%w: cursor is invalid", domainmcp.ErrInvalidParams)
+	}
+	if parts[0] != "v1" && parts[0] != "v2" {
+		return 0, 0, fmt.Errorf("%w: cursor is invalid", domainmcp.ErrInvalidParams)
+	}
+	if parts[0] == "v1" && len(parts) != 3 || parts[0] == "v2" && (len(parts) != 4 || parts[3] != mcpMessageFilterFingerprint(query)) {
 		return 0, 0, fmt.Errorf("%w: cursor is invalid", domainmcp.ErrInvalidParams)
 	}
 	date, err := strconv.ParseInt(parts[1], 10, 64)
@@ -4635,6 +4699,17 @@ func decodeMCPMessageCursor(cursor string) (int64, int, error) {
 		return 0, 0, fmt.Errorf("%w: cursor is invalid", domainmcp.ErrInvalidParams)
 	}
 	return date, id, nil
+}
+
+func mcpMessageFilterFingerprint(query domainmcp.MessageQuery) string {
+	filter := "all"
+	if len(query.Categories) > 0 {
+		filter = "categories=" + strings.Join(query.Categories, ",")
+	} else if query.HasMessageType {
+		filter = fmt.Sprintf("messageType=%d", query.MessageType)
+	}
+	digest := sha256.Sum256([]byte(filter))
+	return hex.EncodeToString(digest[:8])
 }
 
 func optionalStringArgument(arguments map[string]any, name string) (string, error) {
@@ -5101,9 +5176,21 @@ func listMessagesTool() domainmcp.Tool {
 					"minimum":     0,
 					"description": "Optional legacy message type filter.",
 				},
+				"categories": map[string]any{
+					"type":        "array",
+					"minItems":    1,
+					"maxItems":    6,
+					"uniqueItems": true,
+					"items":       map[string]any{"type": "string", "enum": []string{"spy", "battle", "expedition", "alliance", "personal", "other"}},
+					"description": "Optional Commander-compatible categories combined with OR. Mutually exclusive with messageType.",
+				},
 				"includeText": map[string]any{
 					"type":        "boolean",
 					"description": "Include message body text when true. Defaults to false.",
+				},
+				"includeSummary": map[string]any{
+					"type":        "boolean",
+					"description": "Include total and unread counts for all Commander message categories.",
 				},
 				"cursor": map[string]any{
 					"type":        "string",
@@ -5125,6 +5212,20 @@ func listMessagesTool() domainmcp.Tool {
 						"limit":      map[string]any{"type": "integer"},
 						"hasMore":    map[string]any{"type": "boolean"},
 						"nextCursor": map[string]any{"type": "string"},
+						"summary": map[string]any{
+							"type": "array",
+							"items": map[string]any{
+								"type": "object",
+								"properties": map[string]any{
+									"category": map[string]any{"type": "string", "enum": []string{"spy", "battle", "expedition", "alliance", "personal", "other"}},
+									"label":    map[string]any{"type": "string"},
+									"total":    map[string]any{"type": "integer"},
+									"unread":   map[string]any{"type": "integer"},
+									"selected": map[string]any{"type": "boolean"},
+								},
+								"required": []string{"category", "label", "total", "unread", "selected"},
+							},
+						},
 						"messages": map[string]any{
 							"type":  "array",
 							"items": map[string]any{"type": "object"},

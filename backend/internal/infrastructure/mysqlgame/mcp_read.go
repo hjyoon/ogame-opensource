@@ -256,11 +256,19 @@ func (r MCPReadRepository) ListMCPMessages(ctx context.Context, playerID int, qu
 	if hasMore {
 		rows = rows[:query.Limit]
 	}
+	var summary []domainmcp.MessageCategorySummary
+	if query.IncludeSummary {
+		summary, err = r.loadMCPMessageCategorySummary(ctx, messagesTable, playerID, query)
+		if err != nil {
+			return domainmcp.MessageList{}, err
+		}
+	}
 	return domainmcp.MessageList{
 		PlayerID: playerID,
 		Count:    len(rows),
 		Limit:    query.Limit,
 		HasMore:  hasMore,
+		Summary:  summary,
 		Messages: rows,
 	}, nil
 }
@@ -325,6 +333,11 @@ func (r MCPReadRepository) loadMCPMessageRows(ctx context.Context, messagesTable
 	if query.HasMessageType {
 		statement += " AND pm = ?"
 		args = append(args, query.MessageType)
+	} else if len(query.MessageTypes) > 0 {
+		statement += fmt.Sprintf(" AND pm IN (%s)", placeholders(len(query.MessageTypes)))
+		for _, messageType := range query.MessageTypes {
+			args = append(args, messageType)
+		}
 	}
 	if query.HasCursor {
 		statement += " AND (date < ? OR (date = ? AND msg_id < ?))"
@@ -349,6 +362,49 @@ func (r MCPReadRepository) loadMCPMessageRows(ctx context.Context, messagesTable
 		return nil, err
 	}
 	return messages, nil
+}
+
+func (r MCPReadRepository) loadMCPMessageCategorySummary(ctx context.Context, messagesTable string, playerID int, query domainmcp.MessageQuery) ([]domainmcp.MessageCategorySummary, error) {
+	counts, err := (MessagesRepository{queryer: r.queryer}).loadMessageCategoryCounts(ctx, messagesTable, playerID)
+	if err != nil {
+		return nil, err
+	}
+	selected := map[string]bool{}
+	for _, category := range query.Categories {
+		selected[category] = true
+	}
+	if query.HasMessageType {
+		selected[mcpMessageCategoryForType(query.MessageType)] = true
+	}
+	selectAll := len(query.Categories) == 0 && !query.HasMessageType
+	summary := make([]domainmcp.MessageCategorySummary, 0, len(counts))
+	for _, count := range counts {
+		summary = append(summary, domainmcp.MessageCategorySummary{
+			Category: count.Key,
+			Label:    count.Label,
+			Total:    count.Total,
+			Unread:   count.Unread,
+			Selected: selectAll || selected[count.Key],
+		})
+	}
+	return summary, nil
+}
+
+func mcpMessageCategoryForType(messageType int) string {
+	switch messageType {
+	case domaingame.MessageTypeSpyReport:
+		return "spy"
+	case domaingame.MessageTypeBattleReportLink:
+		return "battle"
+	case domaingame.MessageTypeExpedition:
+		return "expedition"
+	case domaingame.MessageTypeAlliance:
+		return "alliance"
+	case domaingame.MessageTypePM:
+		return "personal"
+	default:
+		return "other"
+	}
 }
 
 func (r MCPReadRepository) loadMCPMessageByID(ctx context.Context, messagesTable string, playerID int, messageID int) (domainmcp.PlayerMessage, error) {
