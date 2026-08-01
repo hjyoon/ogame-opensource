@@ -101,6 +101,10 @@ func TestMCPRateLimiterConfigAndRefill(t *testing.T) {
 	if allowed, _ := limiter.allow("client"); !allowed {
 		t.Fatalf("expected request to pass after refill")
 	}
+	status := limiter.status("mcp-rpc", "client", "")
+	if !status.Enabled || status.Client == nil || status.Client.RequestsPerMinute != 60 || status.Client.Burst != 1 || status.Client.Remaining != 0 || status.Client.RetryAfterSeconds != 1 || status.Client.ResetAt != now.Add(time.Second).Unix() {
+		t.Fatalf("unexpected rate limit status: %+v", status)
+	}
 }
 
 func TestMCPRateLimiterSeparatesBearerTokensAndEvictsIdleBuckets(t *testing.T) {

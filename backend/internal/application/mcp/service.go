@@ -972,7 +972,7 @@ func (s Service) ListTools(ctx context.Context, command domainmcp.ListToolsComma
 		return domainmcp.ListToolsResult{}, err
 	}
 	if access.HasScope(domainmcp.ScopeRead) {
-		tools = append(tools, accessTool())
+		tools = append(tools, accessTool(), rateLimitStatusTool())
 		if s.readRepository != nil {
 			tools = append(tools, listPlanetsTool(), accountOverviewTool(), planetResourcesTool(), buildingQueueTool(), fleetMovementsTool())
 		}
@@ -1040,7 +1040,7 @@ func (s Service) ListTools(ctx context.Context, command domainmcp.ListToolsComma
 	staffLevel := staffAccessLevel(access)
 	if staffLevel > domaingame.AdminLevelPlayer {
 		if !access.HasScope(domainmcp.ScopeRead) {
-			tools = append(tools, accessTool())
+			tools = append(tools, accessTool(), rateLimitStatusTool())
 		}
 		tools = append(tools, adminAccessTool())
 		if s.adminService != nil {
@@ -1146,6 +1146,18 @@ func (s Service) CallTool(ctx context.Context, command domainmcp.CallToolCommand
 		audit.Scopes = access.Scopes
 		audit.Authorized = true
 		return callMCPAccess(access), nil
+	case "get_rate_limit_status":
+		access, err := s.verify(ctx, command.AccessToken)
+		if err != nil {
+			return domainmcp.ToolCallResult{}, err
+		}
+		if !access.HasScope(domainmcp.ScopeRead) && staffAccessLevel(access) == domaingame.AdminLevelPlayer {
+			return domainmcp.ToolCallResult{}, domainmcp.ErrForbidden
+		}
+		audit.PlayerID = access.PlayerID
+		audit.Scopes = access.Scopes
+		audit.Authorized = true
+		return s.callRateLimitStatus(command.RateLimitStatus), nil
 	case "get_admin_access":
 		access, err := s.authorizeStaff(ctx, command.AccessToken)
 		if err != nil {
@@ -4889,6 +4901,27 @@ func callMCPAccess(access domainmcp.Access) domainmcp.ToolCallResult {
 	}
 }
 
+func (s Service) callRateLimitStatus(current *domainmcp.RateLimitStatus) domainmcp.ToolCallResult {
+	status := domainmcp.RateLimitStatus{
+		Enabled:    false,
+		Algorithm:  "token_bucket",
+		Scope:      "mcp-rpc",
+		ObservedAt: s.now().Unix(),
+	}
+	if current != nil {
+		status = *current
+	}
+	structured := map[string]any{"rateLimit": status}
+	text, _ := json.Marshal(structured)
+	return domainmcp.ToolCallResult{
+		Content: []domainmcp.Content{
+			{Type: "text", Text: string(text)},
+		},
+		StructuredContent: structured,
+		IsError:           false,
+	}
+}
+
 func serverHealthTool() domainmcp.Tool {
 	return domainmcp.Tool{
 		Name:        "get_server_health",
@@ -4962,6 +4995,57 @@ func accessTool() domainmcp.Tool {
 			"destructiveHint": false,
 			"idempotentHint":  true,
 		},
+	}
+}
+
+func rateLimitStatusTool() domainmcp.Tool {
+	return domainmcp.Tool{
+		Name:        "get_rate_limit_status",
+		Title:       "Get Rate Limit Status",
+		Description: "Return the authenticated caller's current MCP token-bucket allowance after this request, plus the shared network guard allowance when available.",
+		InputSchema: map[string]any{
+			"type":                 "object",
+			"properties":           map[string]any{},
+			"additionalProperties": false,
+		},
+		OutputSchema: map[string]any{
+			"type": "object",
+			"properties": map[string]any{
+				"rateLimit": map[string]any{
+					"type": "object",
+					"properties": map[string]any{
+						"enabled":      map[string]any{"type": "boolean"},
+						"algorithm":    map[string]any{"type": "string"},
+						"scope":        map[string]any{"type": "string"},
+						"observedAt":   map[string]any{"type": "integer"},
+						"client":       rateLimitBucketOutputSchema(),
+						"networkGuard": rateLimitBucketOutputSchema(),
+					},
+					"required": []string{"enabled", "algorithm", "scope", "observedAt"},
+				},
+			},
+			"required": []string{"rateLimit"},
+		},
+		Annotations: map[string]any{
+			"readOnlyHint":    true,
+			"destructiveHint": false,
+			"idempotentHint":  true,
+		},
+	}
+}
+
+func rateLimitBucketOutputSchema() map[string]any {
+	return map[string]any{
+		"type": "object",
+		"properties": map[string]any{
+			"requestsPerMinute": map[string]any{"type": "integer"},
+			"burst":             map[string]any{"type": "integer"},
+			"remaining":         map[string]any{"type": "integer"},
+			"refillPerSecond":   map[string]any{"type": "number"},
+			"retryAfterSeconds": map[string]any{"type": "integer"},
+			"resetAt":           map[string]any{"type": "integer"},
+		},
+		"required": []string{"requestsPerMinute", "burst", "remaining", "refillPerSecond", "retryAfterSeconds", "resetAt"},
 	}
 }
 

@@ -1,6 +1,7 @@
 package httpdelivery
 
 import (
+	"context"
 	"crypto/sha256"
 	"encoding/hex"
 	"math"
@@ -10,6 +11,8 @@ import (
 	"strings"
 	"sync"
 	"time"
+
+	domainmcp "github.com/hjyoon/ogame-opensource/backend/internal/domain/mcp"
 )
 
 const (
@@ -43,6 +46,8 @@ type rateLimitBucket struct {
 	last   time.Time
 }
 
+type rateLimitStatusContextKey struct{}
+
 func newMCPRateLimiter(config RateLimitConfig) *rateLimiter {
 	if config.Disabled {
 		return nil
@@ -74,22 +79,61 @@ func (l *rateLimiter) wrap(scope string, next http.HandlerFunc) http.HandlerFunc
 		return next
 	}
 	return func(w http.ResponseWriter, r *http.Request) {
+		guardKey := ""
 		if bearerToken(r) != "" {
-			guardAllowed, guardRetryAfter := l.allowNetworkGuard(scope + ":guard:" + requestNetworkClientKey(r))
+			guardKey = scope + ":guard:" + requestNetworkClientKey(r)
+			guardAllowed, guardRetryAfter := l.allowNetworkGuard(guardKey)
 			if !guardAllowed {
 				w.Header().Set("Retry-After", strconv.Itoa(guardRetryAfter))
 				http.Error(w, "rate limit exceeded", http.StatusTooManyRequests)
 				return
 			}
 		}
-		allowed, retryAfter := l.allow(scope + ":" + requestClientKey(r))
+		clientKey := scope + ":" + requestClientKey(r)
+		allowed, retryAfter := l.allow(clientKey)
 		if !allowed {
 			w.Header().Set("Retry-After", strconv.Itoa(retryAfter))
 			http.Error(w, "rate limit exceeded", http.StatusTooManyRequests)
 			return
 		}
-		next(w, r)
+		status := l.status(scope, clientKey, guardKey)
+		ctx := context.WithValue(r.Context(), rateLimitStatusContextKey{}, status)
+		next(w, r.WithContext(ctx))
 	}
+}
+
+func (l *rateLimiter) status(scope string, clientKey string, guardKey string) domainmcp.RateLimitStatus {
+	l.mu.Lock()
+	defer l.mu.Unlock()
+
+	now := l.now()
+	status := domainmcp.RateLimitStatus{
+		Enabled:    true,
+		Algorithm:  "token_bucket",
+		Scope:      scope,
+		ObservedAt: now.Unix(),
+	}
+	client := snapshotRateLimitBucket(l.buckets, clientKey, l.requestsPerMinute, l.burst, now)
+	status.Client = &client
+	if guardKey != "" {
+		guard := snapshotRateLimitBucket(
+			l.guardBuckets,
+			guardKey,
+			l.requestsPerMinute*defaultMCPRateLimitIPGuard,
+			l.burst*defaultMCPRateLimitIPGuard,
+			now,
+		)
+		status.NetworkGuard = &guard
+	}
+	return status
+}
+
+func rateLimitStatusFromContext(ctx context.Context) *domainmcp.RateLimitStatus {
+	status, ok := ctx.Value(rateLimitStatusContextKey{}).(domainmcp.RateLimitStatus)
+	if !ok {
+		return nil
+	}
+	return &status
 }
 
 func (l *rateLimiter) allow(key string) (bool, int) {
@@ -145,6 +189,39 @@ func allowRateLimitBucket(buckets map[string]*rateLimitBucket, key string, reque
 		seconds = 1
 	}
 	return false, seconds
+}
+
+func snapshotRateLimitBucket(buckets map[string]*rateLimitBucket, key string, requestsPerMinute int, burst int, now time.Time) domainmcp.RateLimitBucketStatus {
+	tokens := float64(burst)
+	if bucket, ok := buckets[key]; ok {
+		tokens = bucket.tokens
+		if elapsed := now.Sub(bucket.last).Seconds(); elapsed > 0 {
+			tokens = math.Min(float64(burst), tokens+elapsed*(float64(requestsPerMinute)/60.0))
+		}
+	}
+	if tokens < 0 {
+		tokens = 0
+	}
+	if tokens > float64(burst) {
+		tokens = float64(burst)
+	}
+	refillPerSecond := float64(requestsPerMinute) / 60.0
+	retryAfter := 0
+	if tokens < 1 {
+		retryAfter = int(math.Ceil((1 - tokens) / refillPerSecond))
+		if retryAfter < 1 {
+			retryAfter = 1
+		}
+	}
+	resetAfter := int(math.Ceil((float64(burst) - tokens) / refillPerSecond))
+	return domainmcp.RateLimitBucketStatus{
+		RequestsPerMinute: requestsPerMinute,
+		Burst:             burst,
+		Remaining:         int(math.Floor(tokens)),
+		RefillPerSecond:   refillPerSecond,
+		RetryAfterSeconds: retryAfter,
+		ResetAt:           now.Add(time.Duration(resetAfter) * time.Second).Unix(),
+	}
 }
 
 func requestClientKey(r *http.Request) string {

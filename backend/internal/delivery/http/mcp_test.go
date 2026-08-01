@@ -52,6 +52,9 @@ func TestMCPPassesBearerTokenToUseCase(t *testing.T) {
 	if mcp.callCommand.AccessToken != "scoped-token" {
 		t.Fatalf("expected bearer token to be passed to MCP usecase, got %+v", mcp.callCommand)
 	}
+	if status := mcp.callCommand.RateLimitStatus; status == nil || !status.Enabled || status.Scope != "mcp-rpc" || status.Client == nil || status.Client.Remaining >= status.Client.Burst || status.NetworkGuard == nil {
+		t.Fatalf("expected post-request rate limit status to be passed to MCP usecase, got %+v", status)
+	}
 
 	req = httptest.NewRequest(http.MethodPost, "http://game.local/mcp", strings.NewReader(`{"jsonrpc":"2.0","id":2,"method":"tools/list"}`))
 	req.Header.Set("Authorization", "Bearer scoped-token")

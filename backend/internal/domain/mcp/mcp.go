@@ -1695,9 +1695,28 @@ type ListToolsResult struct {
 }
 
 type CallToolCommand struct {
-	Name        string
-	Arguments   map[string]any
-	AccessToken string
+	Name            string
+	Arguments       map[string]any
+	AccessToken     string
+	RateLimitStatus *RateLimitStatus
+}
+
+type RateLimitStatus struct {
+	Enabled      bool                   `json:"enabled"`
+	Algorithm    string                 `json:"algorithm"`
+	Scope        string                 `json:"scope"`
+	ObservedAt   int64                  `json:"observedAt"`
+	Client       *RateLimitBucketStatus `json:"client,omitempty"`
+	NetworkGuard *RateLimitBucketStatus `json:"networkGuard,omitempty"`
+}
+
+type RateLimitBucketStatus struct {
+	RequestsPerMinute int     `json:"requestsPerMinute"`
+	Burst             int     `json:"burst"`
+	Remaining         int     `json:"remaining"`
+	RefillPerSecond   float64 `json:"refillPerSecond"`
+	RetryAfterSeconds int     `json:"retryAfterSeconds"`
+	ResetAt           int64   `json:"resetAt"`
 }
 
 type ToolCallResult struct {

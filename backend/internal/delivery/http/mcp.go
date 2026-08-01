@@ -120,9 +120,10 @@ func (a app) handleMCPPost(w http.ResponseWriter, r *http.Request) {
 			params.Arguments = map[string]any{}
 		}
 		result, err := a.deps.MCP.CallTool(r.Context(), domainmcp.CallToolCommand{
-			Name:        params.Name,
-			Arguments:   params.Arguments,
-			AccessToken: accessToken,
+			Name:            params.Name,
+			Arguments:       params.Arguments,
+			AccessToken:     accessToken,
+			RateLimitStatus: rateLimitStatusFromContext(r.Context()),
 		})
 		if errors.Is(err, domainmcp.ErrToolNotFound) {
 			writeJSONRPCError(w, request.ID, http.StatusOK, -32602, "Unknown tool")

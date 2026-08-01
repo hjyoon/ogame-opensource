@@ -36,13 +36,13 @@ token:player_id:scope1,scope2;next:7:mcp:read
 
 ## Scopes And Tools
 
-The server exposes up to 61 tools. Coupons need both databases; staff tools need Admin.
+The server exposes up to 62 tools. Coupons need both databases; staff tools need Admin.
 
 Player scopes are `mcp:read`, `mcp:messages`, `mcp:message_write`, `mcp:notes_write`, `mcp:buddy_write`, `mcp:fleet`, `mcp:fleet_write`, `mcp:queue_write`, `mcp:resources_write`, `mcp:premium_write`, `mcp:merchant_write`, `mcp:planet_write`, `mcp:alliance_write`, `mcp:account_write`, and `mcp:payment_write`.
 
 `mcp:operator` is available only at user type 1+. `mcp:admin` is available only at type 2. Current DB role is checked on issuance, OAuth exchange, tool listing, and every call, so demotion takes effect immediately. An Admin may issue an Operator-only token; its privilege ceiling remains Operator.
 
-Read tools cover access, planets, overview, resources, queues, fleets, officers, search, statistics, alliance, buddy, pranger, notes, options, maintenance, merchant, Jump Gate, empire, technology, buildings, research, shipyard, and defense.
+Read tools cover access/rate-limit status, planets, overview, resources, queues, fleets, officers, search, statistics, alliance, social/account, empire, technology, buildings, research, shipyard, and defense.
 
 `get_galaxy_system` also needs `mcp:resources_write`; remote views spend 10 deuterium.
 

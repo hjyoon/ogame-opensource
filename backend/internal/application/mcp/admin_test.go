@@ -88,9 +88,9 @@ func TestServiceListsStaffToolsByRoleAndScope(t *testing.T) {
 		want  string
 	}{
 		{token: "player", want: "get_server_health"},
-		{token: "operator", want: "get_server_health,get_mcp_access,get_admin_access,get_admin_panel,mutate_admin_panel"},
-		{token: "limited", want: "get_server_health,get_mcp_access,get_admin_access,get_admin_panel,mutate_admin_panel"},
-		{token: "admin", want: "get_server_health,get_mcp_access,get_admin_access,get_admin_panel,mutate_admin_panel"},
+		{token: "operator", want: "get_server_health,get_mcp_access,get_rate_limit_status,get_admin_access,get_admin_panel,mutate_admin_panel"},
+		{token: "limited", want: "get_server_health,get_mcp_access,get_rate_limit_status,get_admin_access,get_admin_panel,mutate_admin_panel"},
+		{token: "admin", want: "get_server_health,get_mcp_access,get_rate_limit_status,get_admin_access,get_admin_panel,mutate_admin_panel"},
 	} {
 		tools, err := service.ListTools(context.Background(), domainmcp.ListToolsCommand{AccessToken: tt.token})
 		if err != nil {

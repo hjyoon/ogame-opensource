@@ -586,8 +586,8 @@ func TestServiceListsScopedToolsOnlyForReadableTokens(t *testing.T) {
 	if err != nil {
 		t.Fatalf("ListTools returned error: %v", err)
 	}
-	if len(tools.Tools) != 2 || tools.Tools[1].Name != "get_mcp_access" {
-		t.Fatalf("expected protected access tool for read token, got %+v", tools)
+	if len(tools.Tools) != 3 || tools.Tools[1].Name != "get_mcp_access" || tools.Tools[2].Name != "get_rate_limit_status" {
+		t.Fatalf("expected protected access and rate-limit tools for read token, got %+v", tools)
 	}
 
 	tools, err = service.ListTools(context.Background(), domainmcp.ListToolsCommand{AccessToken: "write"})
@@ -618,7 +618,7 @@ func TestServiceListsPlanetToolWhenReadRepositoryIsAvailable(t *testing.T) {
 	for _, tool := range tools.Tools {
 		names = append(names, tool.Name)
 	}
-	if strings.Join(names, ",") != "get_server_health,get_mcp_access,list_planets,get_account_overview,get_planet_resources,get_building_queue,get_fleet_movements" {
+	if strings.Join(names, ",") != "get_server_health,get_mcp_access,get_rate_limit_status,list_planets,get_account_overview,get_planet_resources,get_building_queue,get_fleet_movements" {
 		t.Fatalf("unexpected tools: %v", names)
 	}
 }
@@ -638,7 +638,7 @@ func TestServiceListsOfficerStatusToolForReadScope(t *testing.T) {
 	for _, tool := range tools.Tools {
 		names = append(names, tool.Name)
 	}
-	if strings.Join(names, ",") != "get_server_health,get_mcp_access,get_officer_status" {
+	if strings.Join(names, ",") != "get_server_health,get_mcp_access,get_rate_limit_status,get_officer_status" {
 		t.Fatalf("unexpected read officer tools: %v", names)
 	}
 }
@@ -658,7 +658,7 @@ func TestServiceListsSearchGameToolForReadScope(t *testing.T) {
 	for _, tool := range tools.Tools {
 		names = append(names, tool.Name)
 	}
-	if strings.Join(names, ",") != "get_server_health,get_mcp_access,search_game" {
+	if strings.Join(names, ",") != "get_server_health,get_mcp_access,get_rate_limit_status,search_game" {
 		t.Fatalf("unexpected read search tools: %v", names)
 	}
 }
@@ -679,7 +679,7 @@ func TestServiceListsGalaxySystemToolForReadAndResourceWriteScopes(t *testing.T)
 	for _, tool := range tools.Tools {
 		readNames = append(readNames, tool.Name)
 	}
-	if strings.Join(readNames, ",") != "get_server_health,get_mcp_access" {
+	if strings.Join(readNames, ",") != "get_server_health,get_mcp_access,get_rate_limit_status" {
 		t.Fatalf("read-only scope exposed a resource-spending galaxy tool: %v", readNames)
 	}
 	tools, err = service.ListTools(context.Background(), domainmcp.ListToolsCommand{AccessToken: "galaxy"})
@@ -690,7 +690,7 @@ func TestServiceListsGalaxySystemToolForReadAndResourceWriteScopes(t *testing.T)
 	for _, tool := range tools.Tools {
 		names = append(names, tool.Name)
 	}
-	if strings.Join(names, ",") != "get_server_health,get_mcp_access,get_galaxy_system" {
+	if strings.Join(names, ",") != "get_server_health,get_mcp_access,get_rate_limit_status,get_galaxy_system" {
 		t.Fatalf("unexpected galaxy tools: %v", names)
 	}
 	tool := tools.Tools[len(tools.Tools)-1]
@@ -714,7 +714,7 @@ func TestServiceListsStatisticsToolForReadScope(t *testing.T) {
 	for _, tool := range tools.Tools {
 		names = append(names, tool.Name)
 	}
-	if strings.Join(names, ",") != "get_server_health,get_mcp_access,get_statistics" {
+	if strings.Join(names, ",") != "get_server_health,get_mcp_access,get_rate_limit_status,get_statistics" {
 		t.Fatalf("unexpected read statistics tools: %v", names)
 	}
 }
@@ -734,7 +734,7 @@ func TestServiceListsAllianceStatusToolForReadScope(t *testing.T) {
 	for _, tool := range tools.Tools {
 		names = append(names, tool.Name)
 	}
-	if strings.Join(names, ",") != "get_server_health,get_mcp_access,get_alliance_status" {
+	if strings.Join(names, ",") != "get_server_health,get_mcp_access,get_rate_limit_status,get_alliance_status" {
 		t.Fatalf("unexpected read alliance tools: %v", names)
 	}
 }
@@ -754,7 +754,7 @@ func TestServiceListsBuddyStatusToolForReadScope(t *testing.T) {
 	for _, tool := range tools.Tools {
 		names = append(names, tool.Name)
 	}
-	if strings.Join(names, ",") != "get_server_health,get_mcp_access,get_buddy_status" {
+	if strings.Join(names, ",") != "get_server_health,get_mcp_access,get_rate_limit_status,get_buddy_status" {
 		t.Fatalf("unexpected read buddy tools: %v", names)
 	}
 }
@@ -794,7 +794,7 @@ func TestServiceListsPrangerToolForReadScope(t *testing.T) {
 	for _, tool := range tools.Tools {
 		names = append(names, tool.Name)
 	}
-	if strings.Join(names, ",") != "get_server_health,get_mcp_access,get_pranger" {
+	if strings.Join(names, ",") != "get_server_health,get_mcp_access,get_rate_limit_status,get_pranger" {
 		t.Fatalf("unexpected pranger tools: %v", names)
 	}
 }
@@ -814,7 +814,7 @@ func TestServiceListsNotesToolForReadScope(t *testing.T) {
 	for _, tool := range tools.Tools {
 		names = append(names, tool.Name)
 	}
-	if strings.Join(names, ",") != "get_server_health,get_mcp_access,get_notes" {
+	if strings.Join(names, ",") != "get_server_health,get_mcp_access,get_rate_limit_status,get_notes" {
 		t.Fatalf("unexpected read notes tools: %v", names)
 	}
 }
@@ -854,7 +854,7 @@ func TestServiceListsOptionsToolForReadScope(t *testing.T) {
 	for _, tool := range tools.Tools {
 		names = append(names, tool.Name)
 	}
-	if strings.Join(names, ",") != "get_server_health,get_mcp_access,get_options" {
+	if strings.Join(names, ",") != "get_server_health,get_mcp_access,get_rate_limit_status,get_options" {
 		t.Fatalf("unexpected read options tools: %v", names)
 	}
 }
@@ -874,7 +874,7 @@ func TestServiceListsMaintenanceToolForReadScope(t *testing.T) {
 	for _, tool := range tools.Tools {
 		names = append(names, tool.Name)
 	}
-	if strings.Join(names, ",") != "get_server_health,get_mcp_access,get_maintenance" {
+	if strings.Join(names, ",") != "get_server_health,get_mcp_access,get_rate_limit_status,get_maintenance" {
 		t.Fatalf("unexpected read maintenance tools: %v", names)
 	}
 }
@@ -894,7 +894,7 @@ func TestServiceListsMerchantStatusToolForReadScope(t *testing.T) {
 	for _, tool := range tools.Tools {
 		names = append(names, tool.Name)
 	}
-	if strings.Join(names, ",") != "get_server_health,get_mcp_access,get_merchant_status" {
+	if strings.Join(names, ",") != "get_server_health,get_mcp_access,get_rate_limit_status,get_merchant_status" {
 		t.Fatalf("unexpected read merchant tools: %v", names)
 	}
 }
@@ -934,7 +934,7 @@ func TestServiceListsJumpGateStatusToolForReadScope(t *testing.T) {
 	for _, tool := range tools.Tools {
 		names = append(names, tool.Name)
 	}
-	if strings.Join(names, ",") != "get_server_health,get_mcp_access,get_jump_gate_status" {
+	if strings.Join(names, ",") != "get_server_health,get_mcp_access,get_rate_limit_status,get_jump_gate_status" {
 		t.Fatalf("unexpected read jump gate tools: %v", names)
 	}
 }
@@ -954,7 +954,7 @@ func TestServiceListsEmpireOverviewToolForReadScope(t *testing.T) {
 	for _, tool := range tools.Tools {
 		names = append(names, tool.Name)
 	}
-	if strings.Join(names, ",") != "get_server_health,get_mcp_access,get_empire_overview" {
+	if strings.Join(names, ",") != "get_server_health,get_mcp_access,get_rate_limit_status,get_empire_overview" {
 		t.Fatalf("unexpected read empire tools: %v", names)
 	}
 }
@@ -974,7 +974,7 @@ func TestServiceListsTechnologyTreeToolForReadScope(t *testing.T) {
 	for _, tool := range tools.Tools {
 		names = append(names, tool.Name)
 	}
-	if strings.Join(names, ",") != "get_server_health,get_mcp_access,get_technology_tree" {
+	if strings.Join(names, ",") != "get_server_health,get_mcp_access,get_rate_limit_status,get_technology_tree" {
 		t.Fatalf("unexpected read technology tools: %v", names)
 	}
 }
@@ -994,7 +994,7 @@ func TestServiceListsBuildingOptionsToolForReadScope(t *testing.T) {
 	for _, tool := range tools.Tools {
 		names = append(names, tool.Name)
 	}
-	if strings.Join(names, ",") != "get_server_health,get_mcp_access,get_building_options" {
+	if strings.Join(names, ",") != "get_server_health,get_mcp_access,get_rate_limit_status,get_building_options" {
 		t.Fatalf("unexpected read building tools: %v", names)
 	}
 }
@@ -1014,7 +1014,7 @@ func TestServiceListsResearchOptionsToolForReadScope(t *testing.T) {
 	for _, tool := range tools.Tools {
 		names = append(names, tool.Name)
 	}
-	if strings.Join(names, ",") != "get_server_health,get_mcp_access,get_research_options" {
+	if strings.Join(names, ",") != "get_server_health,get_mcp_access,get_rate_limit_status,get_research_options" {
 		t.Fatalf("unexpected read research tools: %v", names)
 	}
 }
@@ -1034,7 +1034,7 @@ func TestServiceListsShipyardOptionsToolForReadScope(t *testing.T) {
 	for _, tool := range tools.Tools {
 		names = append(names, tool.Name)
 	}
-	if strings.Join(names, ",") != "get_server_health,get_mcp_access,get_shipyard_options" {
+	if strings.Join(names, ",") != "get_server_health,get_mcp_access,get_rate_limit_status,get_shipyard_options" {
 		t.Fatalf("unexpected read shipyard tools: %v", names)
 	}
 }
@@ -1054,7 +1054,7 @@ func TestServiceListsDefenseOptionsToolForReadScope(t *testing.T) {
 	for _, tool := range tools.Tools {
 		names = append(names, tool.Name)
 	}
-	if strings.Join(names, ",") != "get_server_health,get_mcp_access,get_defense_options" {
+	if strings.Join(names, ",") != "get_server_health,get_mcp_access,get_rate_limit_status,get_defense_options" {
 		t.Fatalf("unexpected read defense tools: %v", names)
 	}
 }
@@ -1074,7 +1074,7 @@ func TestServiceListsFleetOptionsToolForReadScope(t *testing.T) {
 	for _, tool := range tools.Tools {
 		names = append(names, tool.Name)
 	}
-	if strings.Join(names, ",") != "get_server_health,get_mcp_access,get_fleet_options" {
+	if strings.Join(names, ",") != "get_server_health,get_mcp_access,get_rate_limit_status,get_fleet_options" {
 		t.Fatalf("unexpected read fleet options tools: %v", names)
 	}
 }
@@ -1267,7 +1267,7 @@ func TestServiceListsResourceProductionOptionsToolForReadScope(t *testing.T) {
 	for _, tool := range tools.Tools {
 		names = append(names, tool.Name)
 	}
-	if strings.Join(names, ",") != "get_server_health,get_mcp_access,get_resource_production_options" {
+	if strings.Join(names, ",") != "get_server_health,get_mcp_access,get_rate_limit_status,get_resource_production_options" {
 		t.Fatalf("unexpected read resource production tools: %v", names)
 	}
 }
@@ -5121,6 +5121,41 @@ func TestServiceRejectsUnknownTools(t *testing.T) {
 	_, err := service.CallTool(context.Background(), domainmcp.CallToolCommand{Name: "start_building"})
 	if !errors.Is(err, domainmcp.ErrToolNotFound) {
 		t.Fatalf("expected ErrToolNotFound, got %v", err)
+	}
+}
+
+func TestServiceReturnsCurrentRateLimitStatus(t *testing.T) {
+	service := NewServiceWithTokenVerifier(fakeHealthProvider{}, fakeTokenVerifier{
+		access: map[string]domainmcp.Access{
+			"read":  {Authenticated: true, PlayerID: 42, Scopes: []string{domainmcp.ScopeRead}},
+			"write": {Authenticated: true, PlayerID: 43, Scopes: []string{domainmcp.ScopeWrite}},
+		},
+	})
+	current := &domainmcp.RateLimitStatus{
+		Enabled:    true,
+		Algorithm:  "token_bucket",
+		Scope:      "mcp-rpc",
+		ObservedAt: 1700,
+		Client: &domainmcp.RateLimitBucketStatus{
+			RequestsPerMinute: 300,
+			Burst:             60,
+			Remaining:         58,
+			RefillPerSecond:   5,
+			ResetAt:           1701,
+		},
+	}
+	result, err := service.CallTool(context.Background(), domainmcp.CallToolCommand{
+		Name: "get_rate_limit_status", AccessToken: "read", RateLimitStatus: current,
+	})
+	if err != nil {
+		t.Fatalf("CallTool rate limit status returned error: %v", err)
+	}
+	status, ok := result.StructuredContent.(map[string]any)["rateLimit"].(domainmcp.RateLimitStatus)
+	if !ok || !status.Enabled || status.Client == nil || status.Client.Remaining != 58 {
+		t.Fatalf("unexpected rate limit status result: %+v", result.StructuredContent)
+	}
+	if _, err := service.CallTool(context.Background(), domainmcp.CallToolCommand{Name: "get_rate_limit_status", AccessToken: "write"}); !errors.Is(err, domainmcp.ErrForbidden) {
+		t.Fatalf("expected unreadable token to be forbidden, got %v", err)
 	}
 }
 
