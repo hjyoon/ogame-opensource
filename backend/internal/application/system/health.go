@@ -18,26 +18,37 @@ type ReadinessProbe interface {
 	Ready(context.Context) bool
 }
 
+type QueueWorkerStatusProvider interface {
+	Status() domainsystem.QueueWorkerHealth
+}
+
 type HealthConfig struct {
-	Environment        string
-	StaticDir          string
-	LegacyAssetDir     string
-	LegacyBaseURL      string
-	GoTarget           string
-	BunTarget          string
-	ReactTarget        string
-	MasterDBRequired   bool
-	UniverseDBRequired bool
-	ModRuntimeRequired bool
+	Environment         string
+	StaticDir           string
+	LegacyAssetDir      string
+	LegacyBaseURL       string
+	GoTarget            string
+	BunTarget           string
+	ReactTarget         string
+	MasterDBRequired    bool
+	UniverseDBRequired  bool
+	ModRuntimeRequired  bool
+	QueueWorkerRequired bool
 }
 
 type HealthService struct {
-	cfg        HealthConfig
-	assets     AssetProbe
-	runtime    RuntimeProvider
-	masterDB   ReadinessProbe
-	universeDB ReadinessProbe
-	modRuntime ReadinessProbe
+	cfg         HealthConfig
+	assets      AssetProbe
+	runtime     RuntimeProvider
+	masterDB    ReadinessProbe
+	universeDB  ReadinessProbe
+	modRuntime  ReadinessProbe
+	queueWorker QueueWorkerStatusProvider
+}
+
+func (s HealthService) WithQueueWorkerStatus(provider QueueWorkerStatusProvider) HealthService {
+	s.queueWorker = provider
+	return s
 }
 
 func NewHealthService(cfg HealthConfig, assets AssetProbe, runtime RuntimeProvider, probes ...ReadinessProbe) HealthService {
@@ -67,8 +78,12 @@ func (s HealthService) Get(ctx context.Context) domainsystem.Health {
 	masterReady := !s.cfg.MasterDBRequired || s.masterDB != nil && s.masterDB.Ready(ctx)
 	universeReady := !s.cfg.UniverseDBRequired || s.universeDB != nil && s.universeDB.Ready(ctx)
 	modRuntimeReady := !s.cfg.ModRuntimeRequired || s.modRuntime != nil && s.modRuntime.Ready(ctx)
+	queueWorker := domainsystem.QueueWorkerHealth{Ready: !s.cfg.QueueWorkerRequired}
+	if s.queueWorker != nil {
+		queueWorker = s.queueWorker.Status()
+	}
 	status := "ok"
-	if !staticReady || !legacyReady || !masterReady || !universeReady || !modRuntimeReady {
+	if !staticReady || !legacyReady || !masterReady || !universeReady || !modRuntimeReady || s.cfg.QueueWorkerRequired && !queueWorker.Ready {
 		status = "unavailable"
 	}
 
@@ -88,5 +103,6 @@ func (s HealthService) Get(ctx context.Context) domainsystem.Health {
 		MasterDBReady:     masterReady,
 		UniverseDBReady:   universeReady,
 		ModRuntimeReady:   modRuntimeReady,
+		QueueWorker:       queueWorker,
 	}
 }

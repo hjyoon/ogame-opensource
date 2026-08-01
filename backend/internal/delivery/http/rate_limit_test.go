@@ -3,6 +3,7 @@ package httpdelivery
 import (
 	"net/http"
 	"net/http/httptest"
+	"strconv"
 	"strings"
 	"testing"
 	"time"
@@ -102,6 +103,67 @@ func TestMCPRateLimiterConfigAndRefill(t *testing.T) {
 	}
 }
 
+func TestMCPRateLimiterSeparatesBearerTokensAndEvictsIdleBuckets(t *testing.T) {
+	now := time.Unix(1700, 0)
+	limiter := newMCPRateLimiter(RateLimitConfig{RequestsPerMinute: 1, Burst: 1})
+	limiter.now = func() time.Time { return now }
+
+	request := func(token string) (bool, int) {
+		req := httptest.NewRequest(http.MethodPost, "http://game.local/mcp", nil)
+		req.RemoteAddr = "198.51.100.20:4321"
+		req.Header.Set("Authorization", "Bearer "+token)
+		return limiter.allow(requestClientKey(req))
+	}
+	if allowed, _ := request("token-a"); !allowed {
+		t.Fatal("expected first token request to pass")
+	}
+	if allowed, _ := request("token-a"); allowed {
+		t.Fatal("expected repeated token request to be limited")
+	}
+	if allowed, _ := request("token-b"); !allowed {
+		t.Fatal("expected a separate bearer token to have an independent bucket")
+	}
+	for key := range limiter.buckets {
+		if strings.Contains(key, "token-a") || strings.Contains(key, "token-b") {
+			t.Fatalf("rate limit key exposed bearer secret: %q", key)
+		}
+	}
+
+	now = now.Add(defaultMCPRateLimitBucketTTL + time.Minute)
+	if allowed, _ := limiter.allow("new-client"); !allowed {
+		t.Fatal("expected request after bucket cleanup to pass")
+	}
+	if len(limiter.buckets) != 1 {
+		t.Fatalf("expected idle bucket eviction, got %d buckets", len(limiter.buckets))
+	}
+}
+
+func TestMCPRateLimiterKeepsAggregateIPGuardForBearerTraffic(t *testing.T) {
+	limiter := newMCPRateLimiter(RateLimitConfig{RequestsPerMinute: 1, Burst: 1})
+	called := 0
+	handler := limiter.wrap("mcp-rpc", func(w http.ResponseWriter, _ *http.Request) {
+		called++
+		w.WriteHeader(http.StatusNoContent)
+	})
+	for index := range defaultMCPRateLimitIPGuard + 1 {
+		req := httptest.NewRequest(http.MethodPost, "http://game.local/mcp", nil)
+		req.RemoteAddr = "198.51.100.20:4321"
+		req.Header.Set("Authorization", "Bearer token-"+strconv.Itoa(index))
+		rec := httptest.NewRecorder()
+		handler(rec, req)
+		want := http.StatusNoContent
+		if index == defaultMCPRateLimitIPGuard {
+			want = http.StatusTooManyRequests
+		}
+		if rec.Code != want {
+			t.Fatalf("request %d: expected %d, got %d", index, want, rec.Code)
+		}
+	}
+	if called != defaultMCPRateLimitIPGuard {
+		t.Fatalf("expected IP guard to stop request before handler, called=%d", called)
+	}
+}
+
 func TestMCPRateLimiterNilWrapAndClientKeys(t *testing.T) {
 	called := false
 	var limiter *rateLimiter
@@ -118,20 +180,28 @@ func TestMCPRateLimiterNilWrapAndClientKeys(t *testing.T) {
 
 	req = httptest.NewRequest(http.MethodGet, "http://game.local/mcp", nil)
 	req.Header.Set("X-Forwarded-For", " 198.51.100.10, 198.51.100.11 ")
-	if got := requestClientKey(req); got != "198.51.100.10" {
+	if got := requestClientKey(req); got != "ip:198.51.100.10" {
 		t.Fatalf("expected forwarded client key, got %q", got)
 	}
 	req.Header.Del("X-Forwarded-For")
 	req.RemoteAddr = "203.0.113.7:4321"
-	if got := requestClientKey(req); got != "203.0.113.7" {
+	if got := requestClientKey(req); got != "ip:203.0.113.7" {
 		t.Fatalf("expected remote host client key, got %q", got)
 	}
 	req.RemoteAddr = "not-a-host-port"
-	if got := requestClientKey(req); got != "not-a-host-port" {
+	if got := requestClientKey(req); got != "remote:not-a-host-port" {
 		t.Fatalf("expected raw remote addr client key, got %q", got)
 	}
 	req.RemoteAddr = ""
 	if got := requestClientKey(req); got != "unknown" {
 		t.Fatalf("expected unknown client key, got %q", got)
+	}
+	req.Header.Set("Authorization", "Basic ignored")
+	if got := requestClientKey(req); got != "unknown" {
+		t.Fatalf("expected non-bearer authorization to use network key, got %q", got)
+	}
+	req.Header.Set("Authorization", "Bearer secret-token")
+	if got := requestClientKey(req); !strings.HasPrefix(got, "token:") || strings.Contains(got, "secret-token") {
+		t.Fatalf("expected hashed bearer key, got %q", got)
 	}
 }

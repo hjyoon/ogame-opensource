@@ -396,10 +396,13 @@ func TestSQLiteMCPResourceReadProjectsProductionWithoutPersisting(t *testing.T) 
 	}
 	lastPeek := now.Add(-time.Hour).Unix()
 	if _, err := db.Exec(
-		"UPDATE `uni1_planets` SET `700` = 1000, `701` = 1000, `702` = 1000, `1` = 1, `4` = 1, prod1 = 1, prod4 = 1, lastpeek = ? WHERE planet_id = ?",
+		"UPDATE `uni1_planets` SET `700` = 1990, `701` = 1990, `702` = 2390, `1` = 9, `2` = 1, `3` = 1, `4` = 10, `21` = 2, `31` = 1, prod1 = 1, prod2 = 1, prod3 = 1, prod4 = 1, lastpeek = ? WHERE planet_id = ?",
 		lastPeek,
 		account.HomePlanetID,
 	); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := db.Exec("UPDATE `uni1_users` SET `108` = 2, `115` = 2 WHERE player_id = ?", account.PlayerID); err != nil {
 		t.Fatal(err)
 	}
 
@@ -411,8 +414,64 @@ func TestSQLiteMCPResourceReadProjectsProductionWithoutPersisting(t *testing.T) 
 	if err != nil {
 		t.Fatal(err)
 	}
-	if resources.Resources.Metal <= 1_000 || resources.ProductionPerHour.Metal <= 0 {
+	if resources.Resources.Metal <= 1_990 || resources.Resources.Crystal <= 1_990 || resources.Resources.Deuterium <= 2_390 || resources.ProductionPerHour.Metal <= 0 {
 		t.Fatalf("expected projected production in read response, got %+v", resources)
+	}
+
+	buildingOptions, err := mysqlgame.NewBuildingsReadRepository(db, "uni1_").GetMCPBuildingOptions(context.Background(), account.PlayerID, account.HomePlanetID)
+	if err != nil {
+		t.Fatal(err)
+	}
+	buildingCanBuild := false
+	for _, item := range buildingOptions.Items {
+		if item.ID == domaingame.BuildingMetalMine {
+			buildingCanBuild = item.CanBuild
+		}
+	}
+	if !buildingCanBuild {
+		t.Fatalf("expected building options to use projected resources: %+v", buildingOptions.Items)
+	}
+
+	researchOptions, err := mysqlgame.NewResearchReadRepository(db, "uni1_").GetMCPResearchOptions(context.Background(), account.PlayerID, account.HomePlanetID)
+	if err != nil {
+		t.Fatal(err)
+	}
+	researchCanBuild := false
+	for _, item := range researchOptions.Items {
+		if item.ID == domaingame.ResearchComputer {
+			researchCanBuild = item.CanBuild
+		}
+	}
+	if !researchCanBuild {
+		t.Fatalf("expected research options to use projected resources: %+v", researchOptions.Items)
+	}
+
+	shipyardOptions, err := mysqlgame.NewShipyardReadRepository(db, "uni1_").GetMCPShipyardOptions(context.Background(), account.PlayerID, account.HomePlanetID)
+	if err != nil {
+		t.Fatal(err)
+	}
+	shipyardCanBuild := false
+	for _, item := range shipyardOptions.Items {
+		if item.ID == domaingame.FleetSmallCargo {
+			shipyardCanBuild = item.CanBuild && item.MaxBuild > 0
+		}
+	}
+	if !shipyardCanBuild {
+		t.Fatalf("expected shipyard options to use projected resources: %+v", shipyardOptions.Items)
+	}
+
+	defenseOptions, err := mysqlgame.NewDefenseReadRepository(db, "uni1_").GetMCPDefenseOptions(context.Background(), account.PlayerID, account.HomePlanetID)
+	if err != nil {
+		t.Fatal(err)
+	}
+	defenseCanBuild := false
+	for _, item := range defenseOptions.Items {
+		if item.ID == domaingame.DefenseRocketLauncher {
+			defenseCanBuild = item.CanBuild && item.MaxBuild > 0
+		}
+	}
+	if !defenseCanBuild {
+		t.Fatalf("expected defense options to use projected resources: %+v", defenseOptions.Items)
 	}
 
 	var storedMetal float64
@@ -423,7 +482,7 @@ func TestSQLiteMCPResourceReadProjectsProductionWithoutPersisting(t *testing.T) 
 	).Scan(&storedMetal, &storedLastPeek); err != nil {
 		t.Fatal(err)
 	}
-	if storedMetal != 1_000 || storedLastPeek != lastPeek {
+	if storedMetal != 1_990 || storedLastPeek != lastPeek {
 		t.Fatalf("read-only projection mutated persisted state: metal=%v lastpeek=%d", storedMetal, storedLastPeek)
 	}
 }

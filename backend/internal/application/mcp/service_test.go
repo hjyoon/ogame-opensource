@@ -1304,6 +1304,9 @@ func TestServiceCallsServerHealthTool(t *testing.T) {
 	if !ok || structured["status"] != "ok" || structured["goTarget"] != "1.25" {
 		t.Fatalf("unexpected structured content: %#v", result.StructuredContent)
 	}
+	if queue, ok := structured["queueWorker"].(map[string]any); !ok || queue["ready"] != false {
+		t.Fatalf("expected queue worker status in health result: %#v", structured)
+	}
 }
 
 func TestServiceCallsScopedAccessTool(t *testing.T) {
@@ -4191,7 +4194,7 @@ func TestServiceCallsUpdateResourceProductionWithDryRunAndConfirmation(t *testin
 			PlayerID: 42,
 			PlanetID: 99,
 			Settings: []domainmcp.ResourceProductionSetting{
-				{ID: 1, Name: "Metal Mine", Percent: 80},
+				{ID: 1, Name: "Metal Mine", Percent: 0},
 				{ID: 2, Name: "Crystal Mine", Percent: 70},
 			},
 		},
@@ -4199,7 +4202,7 @@ func TestServiceCallsUpdateResourceProductionWithDryRunAndConfirmation(t *testin
 			PlayerID: 42,
 			PlanetID: 99,
 			Settings: []domainmcp.ResourceProductionSetting{
-				{ID: 1, Name: "Metal Mine", Percent: 80},
+				{ID: 1, Name: "Metal Mine", Percent: 0},
 				{ID: 2, Name: "Crystal Mine", Percent: 70},
 			},
 			Executed: true,
@@ -4210,7 +4213,7 @@ func TestServiceCallsUpdateResourceProductionWithDryRunAndConfirmation(t *testin
 			"resources-write": {Authenticated: true, PlayerID: 42, Scopes: []string{domainmcp.ScopeResourcesWrite}},
 		},
 	}).WithResourceWriteRepository(repository)
-	arguments := map[string]any{"planetId": 99, "production": map[string]any{"1": 80, "2": 70}}
+	arguments := map[string]any{"planetId": 99, "production": map[string]any{"1": 0, "2": 70}}
 
 	result, err := service.CallTool(context.Background(), domainmcp.CallToolCommand{
 		Name:        "update_resource_production",
@@ -4221,17 +4224,18 @@ func TestServiceCallsUpdateResourceProductionWithDryRunAndConfirmation(t *testin
 		t.Fatalf("update_resource_production dry-run returned error: %v", err)
 	}
 	dryRun := result.StructuredContent.(map[string]any)["updateResourceProduction"].(domainmcp.UpdateResourceProductionResult)
-	if !dryRun.DryRun || dryRun.Executed || !dryRun.RequiresConfirmation || !strings.HasPrefix(dryRun.Confirmation, "update_resource_production:99:1=80,2=70:") {
+	if !dryRun.DryRun || dryRun.Executed || !dryRun.RequiresConfirmation || !strings.HasPrefix(dryRun.Confirmation, "update_resource_production:99:1=0,2=70:") {
 		t.Fatalf("unexpected dry-run result: %+v", dryRun)
 	}
-	if repository.previewPlayerID != 42 || repository.previewCommand.PlanetID != 99 || repository.previewCommand.Production[1] != 80 || repository.previewCommand.Production[2] != 70 {
+	percent, zeroPreserved := repository.previewCommand.Production[1]
+	if repository.previewPlayerID != 42 || repository.previewCommand.PlanetID != 99 || !zeroPreserved || percent != 0 || repository.previewCommand.Production[2] != 70 {
 		t.Fatalf("unexpected preview command: player=%d command=%+v", repository.previewPlayerID, repository.previewCommand)
 	}
 
 	result, err = service.CallTool(context.Background(), domainmcp.CallToolCommand{
 		Name:        "update_resource_production",
 		AccessToken: "resources-write",
-		Arguments:   map[string]any{"planetId": 99, "production": map[string]any{"1": 80, "2": 70}, "dryRun": false, "confirm": dryRun.Confirmation},
+		Arguments:   map[string]any{"planetId": 99, "production": map[string]any{"1": 0, "2": 70}, "dryRun": false, "confirm": dryRun.Confirmation},
 	})
 	if err != nil {
 		t.Fatalf("update_resource_production execute returned error: %v", err)

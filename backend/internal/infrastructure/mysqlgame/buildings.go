@@ -15,11 +15,12 @@ import (
 )
 
 type BuildingsRepository struct {
-	queryer         Queryer
-	execer          Execer
-	prefix          string
-	now             func() time.Time
-	updateResources bool
+	queryer          Queryer
+	execer           Execer
+	prefix           string
+	now              func() time.Time
+	updateResources  bool
+	projectResources bool
 }
 
 const buildQueueBatch = 16
@@ -32,7 +33,9 @@ func NewBuildingsRepository(db *sql.DB, prefix string) BuildingsRepository {
 }
 
 func NewBuildingsReadRepository(db *sql.DB, prefix string) BuildingsRepository {
-	return NewBuildingsRepositoryWithRunner(SQLQueryer{DB: db}, nil, prefix, time.Now)
+	repository := NewBuildingsRepositoryWithRunner(SQLQueryer{DB: db}, nil, prefix, time.Now)
+	repository.projectResources = true
+	return repository
 }
 
 func NewBuildingsRepositoryWithQueryer(queryer Queryer, prefix string) BuildingsRepository {
@@ -78,6 +81,12 @@ func (r BuildingsRepository) GetBuildings(ctx context.Context, query appgame.Bui
 	})
 	if err != nil {
 		return domaingame.Buildings{}, err
+	}
+	if r.projectResources {
+		overview.CurrentPlanet, err = projectMCPPlanetResources(ctx, r.queryer, r.prefix, r.now, query.PlayerID, overview.CurrentPlanet)
+		if err != nil {
+			return domaingame.Buildings{}, err
+		}
 	}
 
 	levels, err := r.loadBuildingLevels(ctx, planetsTable, query.PlayerID, overview.CurrentPlanet.ID)

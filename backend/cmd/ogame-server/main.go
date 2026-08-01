@@ -43,14 +43,15 @@ func main() {
 	pools := openDatabasePools(cfg, logger)
 	defer pools.Close(logger)
 	queueWorkerContext, stopQueueWorker := context.WithCancel(context.Background())
-	queueWorkerDone := startDueQueueWorker(queueWorkerContext, cfg, logger, pools)
+	queueWorkerHealth := infraruntime.NewQueueWorkerHealthTracker(cfg.UniDBEnabled, time.Duration(cfg.QueuePollIntervalMS)*time.Millisecond)
+	queueWorkerDone := startDueQueueWorker(queueWorkerContext, cfg, logger, pools, queueWorkerHealth)
 	defer func() {
 		stopQueueWorker()
 		<-queueWorkerDone
 	}()
 	server := &http.Server{
 		Addr:              cfg.Addr,
-		Handler:           buildHandler(cfg, logger, pools),
+		Handler:           buildHandler(cfg, logger, pools, queueWorkerHealth),
 		ReadHeaderTimeout: 5 * time.Second,
 	}
 
@@ -77,10 +78,13 @@ func main() {
 	}
 }
 
-func startDueQueueWorker(ctx context.Context, cfg config.Config, logger *slog.Logger, pools databasePools) <-chan struct{} {
+func startDueQueueWorker(ctx context.Context, cfg config.Config, logger *slog.Logger, pools databasePools, health *infraruntime.QueueWorkerHealthTracker) <-chan struct{} {
 	done := make(chan struct{})
 	interval := time.Duration(cfg.QueuePollIntervalMS) * time.Millisecond
 	if pools.universe == nil || interval <= 0 {
+		if cfg.UniDBEnabled {
+			health.RecordFailure(time.Now())
+		}
 		close(done)
 		return done
 	}
@@ -88,9 +92,15 @@ func startDueQueueWorker(ctx context.Context, cfg config.Config, logger *slog.Lo
 	go func() {
 		defer close(done)
 		settle := func() {
-			if err := settler.FinishDueQueues(ctx, int(time.Now().Unix())); err != nil && ctx.Err() == nil {
-				logger.Error("due queue settlement failed", "universe", cfg.UniNumber, "error", err)
+			settledAt := time.Now()
+			if err := settler.FinishDueQueues(ctx, int(settledAt.Unix())); err != nil {
+				if ctx.Err() == nil {
+					health.RecordFailure(settledAt)
+					logger.Error("due queue settlement failed", "universe", cfg.UniNumber, "error", err)
+				}
+				return
 			}
+			health.RecordSuccess(settledAt)
 		}
 		settle()
 		ticker := time.NewTicker(interval)
@@ -117,20 +127,21 @@ func setServerTimezone(name string) error {
 	return nil
 }
 
-func buildHandler(cfg config.Config, logger *slog.Logger, pools databasePools) http.Handler {
+func buildHandler(cfg config.Config, logger *slog.Logger, pools databasePools, queueWorker appsystem.QueueWorkerStatusProvider) http.Handler {
 	masterDBProbe, universeDBProbe, modRuntimeProbe := pools.readinessProbes(cfg.UniDBPrefix)
 	health := appsystem.NewHealthService(appsystem.HealthConfig{
-		Environment:        cfg.Environment,
-		StaticDir:          cfg.StaticDir,
-		LegacyAssetDir:     cfg.LegacyAssetDir,
-		LegacyBaseURL:      cfg.LegacyBaseURL,
-		GoTarget:           config.GoTarget,
-		BunTarget:          config.BunTarget,
-		ReactTarget:        config.ReactTarget,
-		MasterDBRequired:   cfg.MasterDBEnabled,
-		UniverseDBRequired: cfg.UniDBEnabled,
-		ModRuntimeRequired: cfg.UniDBEnabled && pools.driver == "mysql",
-	}, filesystem.Probe{}, infraruntime.GoRuntime{}, masterDBProbe, universeDBProbe, modRuntimeProbe)
+		Environment:         cfg.Environment,
+		StaticDir:           cfg.StaticDir,
+		LegacyAssetDir:      cfg.LegacyAssetDir,
+		LegacyBaseURL:       cfg.LegacyBaseURL,
+		GoTarget:            config.GoTarget,
+		BunTarget:           config.BunTarget,
+		ReactTarget:         config.ReactTarget,
+		MasterDBRequired:    cfg.MasterDBEnabled,
+		UniverseDBRequired:  cfg.UniDBEnabled,
+		ModRuntimeRequired:  cfg.UniDBEnabled && pools.driver == "mysql",
+		QueueWorkerRequired: cfg.UniDBEnabled,
+	}, filesystem.Probe{}, infraruntime.GoRuntime{}, masterDBProbe, universeDBProbe, modRuntimeProbe).WithQueueWorkerStatus(queueWorker)
 	universes := apppublicsite.NewUniverseCatalogService(universeRepository(cfg, logger, pools))
 	registrationDrafts := registrationValidator(cfg, logger, pools)
 	registration := registrationRegistrar(cfg, logger, pools)

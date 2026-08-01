@@ -1811,6 +1811,15 @@ func (s Service) callServerHealth(ctx context.Context) (domainmcp.ToolCallResult
 		"staticReady":       health.StaticReady,
 		"legacyAssetsReady": health.LegacyAssetsReady,
 		"legacyBaseUrl":     health.LegacyBaseURL,
+		"queueWorker": map[string]any{
+			"enabled":             health.QueueWorker.Enabled,
+			"ready":               health.QueueWorker.Ready,
+			"intervalMs":          health.QueueWorker.IntervalMS,
+			"lastAttemptAt":       health.QueueWorker.LastAttemptAt,
+			"lastSuccessAt":       health.QueueWorker.LastSuccessAt,
+			"lagSeconds":          health.QueueWorker.LagSeconds,
+			"consecutiveFailures": health.QueueWorker.ConsecutiveFailures,
+		},
 	}
 	text, _ := json.Marshal(structured)
 	return domainmcp.ToolCallResult{
@@ -4033,7 +4042,7 @@ func mcpUpdateResourceProductionCommand(arguments map[string]any) (domainmcp.Upd
 	if err != nil {
 		return domainmcp.UpdateResourceProductionCommand{}, err
 	}
-	production, err := intObjectArgument(arguments, "production")
+	production, err := intObjectArgumentPreservingZero(arguments, "production")
 	if err != nil {
 		return domainmcp.UpdateResourceProductionCommand{}, err
 	}
@@ -4629,6 +4638,14 @@ func positiveIntSliceArgument(arguments map[string]any, name string) ([]int, err
 }
 
 func intObjectArgument(arguments map[string]any, name string) (map[int]int, error) {
+	return intObjectArgumentWithZeroPolicy(arguments, name, false)
+}
+
+func intObjectArgumentPreservingZero(arguments map[string]any, name string) (map[int]int, error) {
+	return intObjectArgumentWithZeroPolicy(arguments, name, true)
+}
+
+func intObjectArgumentWithZeroPolicy(arguments map[string]any, name string, preserveZero bool) (map[int]int, error) {
 	if arguments == nil {
 		return nil, nil
 	}
@@ -4650,7 +4667,7 @@ func intObjectArgument(arguments map[string]any, name string) (map[int]int, erro
 		if err != nil {
 			return nil, err
 		}
-		if count > 0 {
+		if count > 0 || preserveZero {
 			values[id] = count
 		}
 	}
@@ -4773,8 +4790,20 @@ func serverHealthTool() domainmcp.Tool {
 				"staticReady":       map[string]any{"type": "boolean"},
 				"legacyAssetsReady": map[string]any{"type": "boolean"},
 				"legacyBaseUrl":     map[string]any{"type": "string"},
+				"queueWorker": map[string]any{
+					"type": "object",
+					"properties": map[string]any{
+						"enabled":             map[string]any{"type": "boolean"},
+						"ready":               map[string]any{"type": "boolean"},
+						"intervalMs":          map[string]any{"type": "integer"},
+						"lastAttemptAt":       map[string]any{"type": "integer"},
+						"lastSuccessAt":       map[string]any{"type": "integer"},
+						"lagSeconds":          map[string]any{"type": "integer"},
+						"consecutiveFailures": map[string]any{"type": "integer"},
+					},
+				},
 			},
-			"required": []string{"status", "service", "environment", "runtime"},
+			"required": []string{"status", "service", "environment", "runtime", "queueWorker"},
 		},
 		Annotations: map[string]any{
 			"readOnlyHint":    true,
@@ -6269,7 +6298,7 @@ func empireOverviewTool() domainmcp.Tool {
 	return domainmcp.Tool{
 		Name:        "get_empire_overview",
 		Title:       "Get Empire Overview",
-		Description: "Return a read-only empire overview across the authenticated player's planets or moons without finishing queues or updating resources.",
+		Description: "Return a read-only empire overview across the authenticated player's planets or moons. Resource rows expose explicit totalProduction, averageProduction, and productionAggregation fields while preserving the legacy production field.",
 		InputSchema: map[string]any{
 			"type": "object",
 			"properties": map[string]any{
@@ -6372,7 +6401,7 @@ func buildingOptionsTool() domainmcp.Tool {
 	return domainmcp.Tool{
 		Name:        "get_building_options",
 		Title:       "Get Building Options",
-		Description: "Return read-only legacy building queue and build options for the authenticated player's current or selected planet without finishing queues or updating resources.",
+		Description: "Return read-only legacy building queue and build options using projected current resources without persisting resources or finishing queues.",
 		InputSchema: map[string]any{
 			"type": "object",
 			"properties": map[string]any{
@@ -6412,7 +6441,7 @@ func researchOptionsTool() domainmcp.Tool {
 	return domainmcp.Tool{
 		Name:        "get_research_options",
 		Title:       "Get Research Options",
-		Description: "Return read-only legacy research queue and research options for the authenticated player's current or selected planet without finishing queues or updating resources.",
+		Description: "Return read-only legacy research queue and research options using projected current resources without persisting resources or finishing queues.",
 		InputSchema: map[string]any{
 			"type": "object",
 			"properties": map[string]any{
@@ -6452,7 +6481,7 @@ func shipyardOptionsTool() domainmcp.Tool {
 	return domainmcp.Tool{
 		Name:        "get_shipyard_options",
 		Title:       "Get Shipyard Options",
-		Description: "Return read-only legacy shipyard queue and ship build options for the authenticated player's current or selected planet without finishing queues or updating resources.",
+		Description: "Return read-only legacy shipyard queue and ship build options using projected current resources without persisting resources or finishing queues.",
 		InputSchema: map[string]any{
 			"type": "object",
 			"properties": map[string]any{
@@ -6494,7 +6523,7 @@ func defenseOptionsTool() domainmcp.Tool {
 	return domainmcp.Tool{
 		Name:        "get_defense_options",
 		Title:       "Get Defense Options",
-		Description: "Return read-only legacy defense queue and defense build options for the authenticated player's current or selected planet without finishing queues or updating resources.",
+		Description: "Return read-only legacy defense queue and defense build options using projected current resources without persisting resources or finishing queues.",
 		InputSchema: map[string]any{
 			"type": "object",
 			"properties": map[string]any{

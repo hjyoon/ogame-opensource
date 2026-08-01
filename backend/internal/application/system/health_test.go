@@ -3,6 +3,8 @@ package system
 import (
 	"context"
 	"testing"
+
+	domainsystem "github.com/hjyoon/ogame-opensource/backend/internal/domain/system"
 )
 
 func TestHealthServiceBuildsDomainHealth(t *testing.T) {
@@ -46,6 +48,31 @@ func TestHealthServiceReportsDatabaseReadiness(t *testing.T) {
 	}
 }
 
+func TestHealthServiceReportsAdaptiveQueueWorkerReadiness(t *testing.T) {
+	service := NewHealthService(HealthConfig{
+		StaticDir:           "/static",
+		LegacyAssetDir:      "/legacy",
+		QueueWorkerRequired: true,
+	}, fakeProbe{ready: map[string]bool{"/static": true, "/legacy": true}}, fakeRuntime{}).
+		WithQueueWorkerStatus(fakeQueueWorkerStatus{health: domainsystem.QueueWorkerHealth{
+			Enabled:             true,
+			Ready:               true,
+			IntervalMS:          1000,
+			LastSuccessAt:       1700,
+			ConsecutiveFailures: 1,
+		}})
+
+	health := service.Get(context.Background())
+	if health.Status != "ok" || !health.QueueWorker.Ready || health.QueueWorker.ConsecutiveFailures != 1 {
+		t.Fatalf("expected recent queue success to keep readiness healthy: %+v", health)
+	}
+
+	service = service.WithQueueWorkerStatus(fakeQueueWorkerStatus{health: domainsystem.QueueWorkerHealth{Enabled: true}})
+	if health = service.Get(context.Background()); health.Status != "unavailable" || health.QueueWorker.Ready {
+		t.Fatalf("expected stale queue worker to fail readiness: %+v", health)
+	}
+}
+
 type fakeProbe struct {
 	ready map[string]bool
 }
@@ -60,6 +87,14 @@ type fakeRuntime struct {
 
 type fakeReadiness struct {
 	ready bool
+}
+
+type fakeQueueWorkerStatus struct {
+	health domainsystem.QueueWorkerHealth
+}
+
+func (f fakeQueueWorkerStatus) Status() domainsystem.QueueWorkerHealth {
+	return f.health
 }
 
 func (f fakeReadiness) Ready(context.Context) bool {

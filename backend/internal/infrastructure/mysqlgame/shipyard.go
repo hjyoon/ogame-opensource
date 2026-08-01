@@ -13,11 +13,12 @@ import (
 )
 
 type ShipyardRepository struct {
-	queryer         Queryer
-	execer          Execer
-	prefix          string
-	now             func() time.Time
-	updateResources bool
+	queryer          Queryer
+	execer           Execer
+	prefix           string
+	now              func() time.Time
+	updateResources  bool
+	projectResources bool
 }
 
 func NewShipyardRepository(db *sql.DB, prefix string) ShipyardRepository {
@@ -26,7 +27,9 @@ func NewShipyardRepository(db *sql.DB, prefix string) ShipyardRepository {
 }
 
 func NewShipyardReadRepository(db *sql.DB, prefix string) ShipyardRepository {
-	return NewShipyardRepositoryWithRunner(SQLQueryer{DB: db}, nil, prefix, time.Now)
+	repository := NewShipyardRepositoryWithRunner(SQLQueryer{DB: db}, nil, prefix, time.Now)
+	repository.projectResources = true
+	return repository
 }
 
 func NewShipyardRepositoryWithQueryer(queryer Queryer, prefix string) ShipyardRepository {
@@ -76,6 +79,12 @@ func (r ShipyardRepository) GetShipyard(ctx context.Context, query appgame.Shipy
 	})
 	if err != nil {
 		return domaingame.Shipyard{}, err
+	}
+	if r.projectResources {
+		overview.CurrentPlanet, err = projectMCPPlanetResources(ctx, r.queryer, r.prefix, r.now, query.PlayerID, overview.CurrentPlanet)
+		if err != nil {
+			return domaingame.Shipyard{}, err
+		}
 	}
 
 	buildings := BuildingsRepository{queryer: r.queryer, prefix: r.prefix}

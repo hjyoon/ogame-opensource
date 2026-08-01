@@ -60,6 +60,9 @@ func TestHealthzReportsMigrationRuntime(t *testing.T) {
 	if !body.StaticReady || !body.LegacyAssetsReady {
 		t.Fatalf("expected ready dirs: %+v", body)
 	}
+	if !body.QueueWorker.Ready {
+		t.Fatalf("expected optional queue worker to be ready: %+v", body.QueueWorker)
+	}
 }
 
 func TestLivezDoesNotDependOnReadiness(t *testing.T) {

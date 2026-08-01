@@ -1,6 +1,8 @@
 package httpdelivery
 
 import (
+	"crypto/sha256"
+	"encoding/hex"
 	"math"
 	"net"
 	"net/http"
@@ -13,6 +15,9 @@ import (
 const (
 	defaultMCPRateLimitPerMinute = 300
 	defaultMCPRateLimitBurst     = 60
+	defaultMCPRateLimitBucketTTL = 10 * time.Minute
+	defaultMCPRateLimitSweep     = time.Minute
+	defaultMCPRateLimitIPGuard   = 10
 )
 
 type RateLimitConfig struct {
@@ -26,6 +31,10 @@ type rateLimiter struct {
 	requestsPerMinute int
 	burst             int
 	buckets           map[string]*rateLimitBucket
+	guardBuckets      map[string]*rateLimitBucket
+	bucketTTL         time.Duration
+	sweepInterval     time.Duration
+	lastSweep         time.Time
 	now               func() time.Time
 }
 
@@ -53,6 +62,9 @@ func newMCPRateLimiter(config RateLimitConfig) *rateLimiter {
 		requestsPerMinute: requestsPerMinute,
 		burst:             burst,
 		buckets:           map[string]*rateLimitBucket{},
+		guardBuckets:      map[string]*rateLimitBucket{},
+		bucketTTL:         defaultMCPRateLimitBucketTTL,
+		sweepInterval:     defaultMCPRateLimitSweep,
 		now:               time.Now,
 	}
 }
@@ -62,6 +74,14 @@ func (l *rateLimiter) wrap(scope string, next http.HandlerFunc) http.HandlerFunc
 		return next
 	}
 	return func(w http.ResponseWriter, r *http.Request) {
+		if bearerToken(r) != "" {
+			guardAllowed, guardRetryAfter := l.allowNetworkGuard(scope + ":guard:" + requestNetworkClientKey(r))
+			if !guardAllowed {
+				w.Header().Set("Retry-After", strconv.Itoa(guardRetryAfter))
+				http.Error(w, "rate limit exceeded", http.StatusTooManyRequests)
+				return
+			}
+		}
 		allowed, retryAfter := l.allow(scope + ":" + requestClientKey(r))
 		if !allowed {
 			w.Header().Set("Retry-After", strconv.Itoa(retryAfter))
@@ -77,23 +97,50 @@ func (l *rateLimiter) allow(key string) (bool, int) {
 	defer l.mu.Unlock()
 
 	now := l.now()
-	bucket, ok := l.buckets[key]
+	l.sweepLocked(now)
+	return allowRateLimitBucket(l.buckets, key, l.requestsPerMinute, l.burst, now)
+}
+
+func (l *rateLimiter) allowNetworkGuard(key string) (bool, int) {
+	l.mu.Lock()
+	defer l.mu.Unlock()
+	now := l.now()
+	l.sweepLocked(now)
+	return allowRateLimitBucket(l.guardBuckets, key, l.requestsPerMinute*defaultMCPRateLimitIPGuard, l.burst*defaultMCPRateLimitIPGuard, now)
+}
+
+func (l *rateLimiter) sweepLocked(now time.Time) {
+	if !l.lastSweep.IsZero() && now.Sub(l.lastSweep) < l.sweepInterval {
+		return
+	}
+	for _, buckets := range []map[string]*rateLimitBucket{l.buckets, l.guardBuckets} {
+		for bucketKey, candidate := range buckets {
+			if now.Sub(candidate.last) > l.bucketTTL {
+				delete(buckets, bucketKey)
+			}
+		}
+	}
+	l.lastSweep = now
+}
+
+func allowRateLimitBucket(buckets map[string]*rateLimitBucket, key string, requestsPerMinute int, burst int, now time.Time) (bool, int) {
+	bucket, ok := buckets[key]
 	if !ok {
-		l.buckets[key] = &rateLimitBucket{tokens: float64(l.burst - 1), last: now}
+		buckets[key] = &rateLimitBucket{tokens: float64(burst - 1), last: now}
 		return true, 0
 	}
 
 	elapsed := now.Sub(bucket.last).Seconds()
 	if elapsed > 0 {
-		refillPerSecond := float64(l.requestsPerMinute) / 60.0
-		bucket.tokens = math.Min(float64(l.burst), bucket.tokens+elapsed*refillPerSecond)
+		refillPerSecond := float64(requestsPerMinute) / 60.0
+		bucket.tokens = math.Min(float64(burst), bucket.tokens+elapsed*refillPerSecond)
 		bucket.last = now
 	}
 	if bucket.tokens >= 1 {
 		bucket.tokens--
 		return true, 0
 	}
-	seconds := int(math.Ceil((1 - bucket.tokens) / (float64(l.requestsPerMinute) / 60.0)))
+	seconds := int(math.Ceil((1 - bucket.tokens) / (float64(requestsPerMinute) / 60.0)))
 	if seconds < 1 {
 		seconds = 1
 	}
@@ -101,21 +148,29 @@ func (l *rateLimiter) allow(key string) (bool, int) {
 }
 
 func requestClientKey(r *http.Request) string {
+	if token := bearerToken(r); token != "" {
+		sum := sha256.Sum256([]byte(token))
+		return "token:" + hex.EncodeToString(sum[:16])
+	}
+	return requestNetworkClientKey(r)
+}
+
+func requestNetworkClientKey(r *http.Request) string {
 	forwarded := strings.TrimSpace(r.Header.Get("X-Forwarded-For"))
 	if forwarded != "" {
 		if comma := strings.IndexByte(forwarded, ','); comma >= 0 {
 			forwarded = forwarded[:comma]
 		}
-		if forwarded = strings.TrimSpace(forwarded); forwarded != "" {
-			return forwarded
+		if forwarded = strings.TrimSpace(forwarded); net.ParseIP(forwarded) != nil {
+			return "ip:" + forwarded
 		}
 	}
 	host, _, err := net.SplitHostPort(r.RemoteAddr)
 	if err == nil && host != "" {
-		return host
+		return "ip:" + host
 	}
 	if r.RemoteAddr != "" {
-		return r.RemoteAddr
+		return "remote:" + r.RemoteAddr
 	}
 	return "unknown"
 }

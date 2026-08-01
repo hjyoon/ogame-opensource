@@ -13,11 +13,12 @@ import (
 )
 
 type ResearchRepository struct {
-	queryer         Queryer
-	execer          Execer
-	prefix          string
-	now             func() time.Time
-	updateResources bool
+	queryer          Queryer
+	execer           Execer
+	prefix           string
+	now              func() time.Time
+	updateResources  bool
+	projectResources bool
 }
 
 func NewResearchRepository(db *sql.DB, prefix string) ResearchRepository {
@@ -26,7 +27,9 @@ func NewResearchRepository(db *sql.DB, prefix string) ResearchRepository {
 }
 
 func NewResearchReadRepository(db *sql.DB, prefix string) ResearchRepository {
-	return NewResearchRepositoryWithRunner(SQLQueryer{DB: db}, nil, prefix, time.Now)
+	repository := NewResearchRepositoryWithRunner(SQLQueryer{DB: db}, nil, prefix, time.Now)
+	repository.projectResources = true
+	return repository
 }
 
 func NewResearchRepositoryWithQueryer(queryer Queryer, prefix string, now func() time.Time) ResearchRepository {
@@ -71,6 +74,12 @@ func (r ResearchRepository) GetResearch(ctx context.Context, query appgame.Resea
 	})
 	if err != nil {
 		return domaingame.Research{}, err
+	}
+	if r.projectResources {
+		overview.CurrentPlanet, err = projectMCPPlanetResources(ctx, r.queryer, r.prefix, r.now, query.PlayerID, overview.CurrentPlanet)
+		if err != nil {
+			return domaingame.Research{}, err
+		}
 	}
 
 	buildings := BuildingsRepository{queryer: r.queryer, prefix: r.prefix}

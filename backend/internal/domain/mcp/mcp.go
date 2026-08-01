@@ -1282,11 +1282,14 @@ type EmpireResourceValue struct {
 }
 
 type EmpireResourceRow struct {
-	ID         int                   `json:"id"`
-	Name       string                `json:"name"`
-	Values     []EmpireResourceValue `json:"values"`
-	Total      int                   `json:"total"`
-	Production int                   `json:"production"`
+	ID                    int                   `json:"id"`
+	Name                  string                `json:"name"`
+	Values                []EmpireResourceValue `json:"values"`
+	Total                 int                   `json:"total"`
+	Production            int                   `json:"production"`
+	ProductionAggregation string                `json:"productionAggregation"`
+	TotalProduction       int                   `json:"totalProduction"`
+	AverageProduction     float64               `json:"averageProduction"`
 }
 
 type EmpireLevelValue struct {

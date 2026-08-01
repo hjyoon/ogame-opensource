@@ -81,6 +81,10 @@ func TestEmpireRepositoryMapsMCPEmpireReadOnly(t *testing.T) {
 		len(empire.Fleet) == 0 || len(empire.Defense) == 0 {
 		t.Fatalf("expected mcp empire aggregate rows, got %+v", empire)
 	}
+	metal := empire.Resources[0]
+	if metal.ProductionAggregation != "average" || metal.TotalProduction != metal.Values[0].Production || metal.AverageProduction != float64(metal.TotalProduction) {
+		t.Fatalf("expected explicit mcp production aggregates, got %+v", metal)
+	}
 	if strings.Contains(queryer.calls[0].sql, "SELECT speed, freeze") {
 		t.Fatalf("read-only MCP empire should not run queue flush, got first query %+v", queryer.calls[0])
 	}
@@ -111,6 +115,9 @@ func TestEmpireRepositoryProjectsCurrentResourcesWithoutWriting(t *testing.T) {
 		planets[0].Resources.Crystal != 1_010 ||
 		planets[0].Resources.Deuterium != 1_000 {
 		t.Fatalf("expected projected empire resources, got %+v", planets[0])
+	}
+	if planets[0].Production.EnergyCapacity <= planets[0].Production.EnergyBalance {
+		t.Fatalf("expected generation capacity independent from net energy balance, got %+v", planets[0].Production)
 	}
 	if len(queryer.calls) != 1 || !strings.Contains(queryer.calls[0].sql, "lastpeek") {
 		t.Fatalf("expected one read-only query including lastpeek, got %+v", queryer.calls)

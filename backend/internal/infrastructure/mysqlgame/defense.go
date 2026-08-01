@@ -13,11 +13,12 @@ import (
 )
 
 type DefenseRepository struct {
-	queryer         Queryer
-	execer          Execer
-	prefix          string
-	now             func() time.Time
-	updateResources bool
+	queryer          Queryer
+	execer           Execer
+	prefix           string
+	now              func() time.Time
+	updateResources  bool
+	projectResources bool
 }
 
 func NewDefenseRepository(db *sql.DB, prefix string) DefenseRepository {
@@ -26,7 +27,9 @@ func NewDefenseRepository(db *sql.DB, prefix string) DefenseRepository {
 }
 
 func NewDefenseReadRepository(db *sql.DB, prefix string) DefenseRepository {
-	return NewDefenseRepositoryWithRunner(SQLQueryer{DB: db}, nil, prefix, time.Now)
+	repository := NewDefenseRepositoryWithRunner(SQLQueryer{DB: db}, nil, prefix, time.Now)
+	repository.projectResources = true
+	return repository
 }
 
 func NewDefenseRepositoryWithQueryer(queryer Queryer, prefix string) DefenseRepository {
@@ -77,6 +80,12 @@ func (r DefenseRepository) GetDefense(ctx context.Context, query appgame.Defense
 	})
 	if err != nil {
 		return domaingame.Defense{}, err
+	}
+	if r.projectResources {
+		overview.CurrentPlanet, err = projectMCPPlanetResources(ctx, r.queryer, r.prefix, r.now, query.PlayerID, overview.CurrentPlanet)
+		if err != nil {
+			return domaingame.Defense{}, err
+		}
 	}
 
 	buildings := BuildingsRepository{queryer: r.queryer, prefix: r.prefix}

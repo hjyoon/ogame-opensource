@@ -229,19 +229,32 @@ func mcpEmpireResourceRows(rows []domaingame.EmpireResourceRow) []domainmcp.Empi
 	result := make([]domainmcp.EmpireResourceRow, 0, len(rows))
 	for _, row := range rows {
 		values := make([]domainmcp.EmpireResourceValue, 0, len(row.Values))
+		totalProduction := 0
 		for _, value := range row.Values {
+			totalProduction += value.Production
 			values = append(values, domainmcp.EmpireResourceValue{
 				PlanetID:   value.PlanetID,
 				Amount:     value.Amount,
 				Production: value.Production,
 			})
 		}
+		averageProduction := 0.0
+		if len(row.Values) > 0 {
+			averageProduction = float64(totalProduction) / float64(len(row.Values))
+		}
+		aggregation := "average"
+		if row.ID == domaingame.ResourceEnergy {
+			aggregation = "total"
+		}
 		result = append(result, domainmcp.EmpireResourceRow{
-			ID:         row.ID,
-			Name:       row.Name,
-			Values:     values,
-			Total:      row.Total,
-			Production: row.Production,
+			ID:                    row.ID,
+			Name:                  row.Name,
+			Values:                values,
+			Total:                 row.Total,
+			Production:            row.Production,
+			ProductionAggregation: aggregation,
+			TotalProduction:       totalProduction,
+			AverageProduction:     averageProduction,
 		})
 	}
 	return result
@@ -508,7 +521,7 @@ func scanEmpirePlanet(rows Rows, levelIDs []int, user empireUser, speed float64,
 		CrystalHourly:   int(production.Totals.Hour.Crystal),
 		DeuteriumHourly: int(production.Totals.Hour.Deuterium),
 		EnergyBalance:   int(production.Totals.Hour.EnergyRaw),
-		EnergyCapacity:  int(production.Totals.Hour.Energy),
+		EnergyCapacity:  overviewEnergyCapacity(production),
 	}
 	if planet.Type == domaingame.PlanetTypePlanet {
 		planet.Resources.MetalCapacity = storageCapacity(planet.Levels[domaingame.BuildingMetalStorage])

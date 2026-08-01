@@ -8,19 +8,30 @@ import (
 )
 
 type healthResponse struct {
-	Status            string `json:"status"`
-	Service           string `json:"service"`
-	Environment       string `json:"environment"`
-	Runtime           string `json:"runtime"`
-	GoTarget          string `json:"goTarget"`
-	BunTarget         string `json:"bunTarget"`
-	ReactTarget       string `json:"reactTarget"`
-	StaticReady       bool   `json:"staticReady"`
-	LegacyAssetsReady bool   `json:"legacyAssetsReady"`
-	LegacyBaseURL     string `json:"legacyBaseUrl"`
-	MasterDBReady     bool   `json:"masterDbReady"`
-	UniverseDBReady   bool   `json:"universeDbReady"`
-	ModRuntimeReady   bool   `json:"modRuntimeReady"`
+	Status            string                    `json:"status"`
+	Service           string                    `json:"service"`
+	Environment       string                    `json:"environment"`
+	Runtime           string                    `json:"runtime"`
+	GoTarget          string                    `json:"goTarget"`
+	BunTarget         string                    `json:"bunTarget"`
+	ReactTarget       string                    `json:"reactTarget"`
+	StaticReady       bool                      `json:"staticReady"`
+	LegacyAssetsReady bool                      `json:"legacyAssetsReady"`
+	LegacyBaseURL     string                    `json:"legacyBaseUrl"`
+	MasterDBReady     bool                      `json:"masterDbReady"`
+	UniverseDBReady   bool                      `json:"universeDbReady"`
+	ModRuntimeReady   bool                      `json:"modRuntimeReady"`
+	QueueWorker       queueWorkerHealthResponse `json:"queueWorker"`
+}
+
+type queueWorkerHealthResponse struct {
+	Enabled             bool  `json:"enabled"`
+	Ready               bool  `json:"ready"`
+	IntervalMS          int   `json:"intervalMs"`
+	LastAttemptAt       int64 `json:"lastAttemptAt"`
+	LastSuccessAt       int64 `json:"lastSuccessAt"`
+	LagSeconds          int64 `json:"lagSeconds"`
+	ConsecutiveFailures int   `json:"consecutiveFailures"`
 }
 
 func (a app) handleHealthz(w http.ResponseWriter, r *http.Request) {
@@ -52,5 +63,14 @@ func toHealthResponse(health domainsystem.Health) healthResponse {
 		MasterDBReady:     health.MasterDBReady,
 		UniverseDBReady:   health.UniverseDBReady,
 		ModRuntimeReady:   health.ModRuntimeReady,
+		QueueWorker: queueWorkerHealthResponse{
+			Enabled:             health.QueueWorker.Enabled,
+			Ready:               health.QueueWorker.Ready,
+			IntervalMS:          health.QueueWorker.IntervalMS,
+			LastAttemptAt:       health.QueueWorker.LastAttemptAt,
+			LastSuccessAt:       health.QueueWorker.LastSuccessAt,
+			LagSeconds:          health.QueueWorker.LagSeconds,
+			ConsecutiveFailures: health.QueueWorker.ConsecutiveFailures,
+		},
 	}
 }

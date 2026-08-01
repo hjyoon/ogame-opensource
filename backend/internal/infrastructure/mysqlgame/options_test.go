@@ -1217,7 +1217,7 @@ func optionsReadResultsUnvalidated(now time.Time, pendingEmail string, passwordH
 func optionsOverviewResults() []fakeQueryResult {
 	return []fakeQueryResult{
 		{rows: fakeRowsFromValues([]any{"legor", int64(123456), 7, 99, 1, 0, 0, 0})},
-		{rows: fakeRowsFromValues([]any{99, "Arakis", domaingame.PlanetTypePlanet, 1, 2, 3, 12800, 19, 4, 163, 1000.0, 2000.0, 3000.0, 10000, 10000, 10000})},
+		{rows: fakeRowsFromValues([]any{99, "Arakis", domaingame.PlanetTypePlanet, 1, 2, 3, 12800, 19, 4, 163, 1000.0, 2000.0, 3000.0, 0, 0, 0})},
 		{rows: fakeRowsFromValues([]any{99, "Arakis", domaingame.PlanetTypePlanet, 1, 2, 3})},
 		{rows: fakeRowsFromValues([]any{2})},
 	}

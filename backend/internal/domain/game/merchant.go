@@ -177,7 +177,7 @@ func ResolveMerchantTrade(offerID int, rates MerchantRates, resources Resources,
 		if cost > metal {
 			return MerchantTradeResult{}, MerchantNotEnoughResourceIssue()
 		}
-		if newCrystal > resources.MetalCapacity || newDeuterium > resources.DeuteriumCapacity {
+		if newCrystal > resources.CrystalCapacity || newDeuterium > resources.DeuteriumCapacity {
 			return MerchantTradeResult{}, MerchantNotEnoughStorageIssue()
 		}
 		if cost <= 0 {

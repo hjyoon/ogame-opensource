@@ -116,7 +116,7 @@ func TestResolveMerchantTradeCases(t *testing.T) {
 		Metal:             1000,
 		Crystal:           1000,
 		Deuterium:         1000,
-		MetalCapacity:     1000,
+		MetalCapacity:     2000,
 		CrystalCapacity:   1000,
 		DeuteriumCapacity: 2000,
 	}, MerchantTradeValues{Crystal: 1})

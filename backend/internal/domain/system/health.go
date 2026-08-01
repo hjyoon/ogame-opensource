@@ -6,6 +6,16 @@ type RuntimeTargets struct {
 	React string
 }
 
+type QueueWorkerHealth struct {
+	Enabled             bool
+	Ready               bool
+	IntervalMS          int
+	LastAttemptAt       int64
+	LastSuccessAt       int64
+	LagSeconds          int64
+	ConsecutiveFailures int
+}
+
 type Health struct {
 	Status            string
 	Service           string
@@ -18,4 +28,5 @@ type Health struct {
 	MasterDBReady     bool
 	UniverseDBReady   bool
 	ModRuntimeReady   bool
+	QueueWorker       QueueWorkerHealth
 }
