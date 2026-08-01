@@ -288,6 +288,9 @@ type MessageQuery struct {
 	MessageType    int
 	HasMessageType bool
 	IncludeText    bool
+	CursorDate     int64
+	CursorID       int
+	HasCursor      bool
 }
 
 type PlayerMessage struct {
@@ -303,10 +306,12 @@ type PlayerMessage struct {
 }
 
 type MessageList struct {
-	PlayerID int             `json:"playerId"`
-	Count    int             `json:"count"`
-	Limit    int             `json:"limit"`
-	Messages []PlayerMessage `json:"messages"`
+	PlayerID   int             `json:"playerId"`
+	Count      int             `json:"count"`
+	Limit      int             `json:"limit"`
+	HasMore    bool            `json:"hasMore"`
+	NextCursor string          `json:"nextCursor"`
+	Messages   []PlayerMessage `json:"messages"`
 }
 
 type MessageDetail struct {

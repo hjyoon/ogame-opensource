@@ -3,6 +3,7 @@ package mysqlgame
 import (
 	"context"
 	"errors"
+	"reflect"
 	"strings"
 	"testing"
 	"time"
@@ -353,6 +354,40 @@ func TestMCPReadRepositoryGetsMessageDetail(t *testing.T) {
 	}
 	if queryer.calls[0].args[0] != 42 || queryer.calls[0].args[1] != 11 {
 		t.Fatalf("expected owned message lookup, got %+v", queryer.calls[0])
+	}
+}
+
+func TestMCPReadRepositoryPaginatesMessagesByDateAndID(t *testing.T) {
+	queryer := &fakeQueryer{results: []fakeQueryResult{{
+		rows: fakeRowsFromValues(
+			[]any{10, domaingame.MessageTypeSpyReport, "Fleet", "First", "", 1, int64(900)},
+			[]any{9, domaingame.MessageTypeSpyReport, "Fleet", "Second", "", 1, int64(900)},
+			[]any{8, domaingame.MessageTypeSpyReport, "Fleet", "More", "", 1, int64(800)},
+		),
+	}}}
+	repository := NewMCPReadRepositoryWithQueryer(queryer, "uni1_")
+
+	messages, err := repository.ListMCPMessages(context.Background(), 42, domainmcp.MessageQuery{
+		Limit:          2,
+		MessageType:    domaingame.MessageTypeSpyReport,
+		HasMessageType: true,
+		CursorDate:     1000,
+		CursorID:       11,
+		HasCursor:      true,
+	})
+	if err != nil {
+		t.Fatalf("ListMCPMessages cursor returned error: %v", err)
+	}
+	if messages.Count != 2 || !messages.HasMore || len(messages.Messages) != 2 || messages.Messages[0].ID != 10 || messages.Messages[1].ID != 9 {
+		t.Fatalf("unexpected cursor page: %+v", messages)
+	}
+	call := queryer.calls[0]
+	if !strings.Contains(call.sql, "date < ? OR (date = ? AND msg_id < ?)") || !strings.Contains(call.sql, "ORDER BY date DESC, msg_id DESC LIMIT ?") {
+		t.Fatalf("unexpected cursor SQL: %s", call.sql)
+	}
+	wantArgs := []any{42, domaingame.MessageTypeBattleReportText, domaingame.MessageTypeSpyReport, int64(1000), int64(1000), 11, 3}
+	if !reflect.DeepEqual(call.args, wantArgs) {
+		t.Fatalf("cursor args=%+v want=%+v", call.args, wantArgs)
 	}
 }
 

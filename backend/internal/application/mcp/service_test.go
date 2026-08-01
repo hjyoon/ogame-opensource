@@ -3296,6 +3296,7 @@ func TestServiceCallsMessageTools(t *testing.T) {
 		PlayerID: 42,
 		Count:    1,
 		Limit:    3,
+		HasMore:  true,
 		Messages: []domainmcp.PlayerMessage{{
 			ID:       11,
 			Type:     0,
@@ -3328,8 +3329,12 @@ func TestServiceCallsMessageTools(t *testing.T) {
 		t.Fatalf("list_messages returned error: %v", err)
 	}
 	listed := result.StructuredContent.(map[string]any)["messages"].(domainmcp.MessageList)
-	if result.IsError || listed.Count != 1 || listed.Messages[0].Text != "Body" {
+	if result.IsError || listed.Count != 1 || listed.Messages[0].Text != "Body" || !listed.HasMore || listed.NextCursor == "" {
 		t.Fatalf("unexpected message list result: %+v", result)
+	}
+	cursorDate, cursorID, err := decodeMCPMessageCursor(listed.NextCursor)
+	if err != nil || cursorDate != 1000 || cursorID != 11 {
+		t.Fatalf("unexpected next cursor date=%d id=%d err=%v", cursorDate, cursorID, err)
 	}
 
 	result, err = service.CallTool(context.Background(), domainmcp.CallToolCommand{
@@ -3372,6 +3377,9 @@ func TestServiceMessageToolsRequireMessageScopeRepositoryAndValidArguments(t *te
 	}
 	if _, err := service.CallTool(context.Background(), domainmcp.CallToolCommand{Name: "list_messages", AccessToken: "messages", Arguments: map[string]any{"includeText": "yes"}}); !errors.Is(err, domainmcp.ErrInvalidParams) {
 		t.Fatalf("expected invalid includeText error, got %v", err)
+	}
+	if _, err := service.CallTool(context.Background(), domainmcp.CallToolCommand{Name: "list_messages", AccessToken: "messages", Arguments: map[string]any{"cursor": "invalid"}}); !errors.Is(err, domainmcp.ErrInvalidParams) {
+		t.Fatalf("expected invalid cursor error, got %v", err)
 	}
 	if _, err := service.CallTool(context.Background(), domainmcp.CallToolCommand{Name: "get_message", AccessToken: "messages"}); !errors.Is(err, domainmcp.ErrInvalidParams) {
 		t.Fatalf("expected missing message id error, got %v", err)
@@ -4809,11 +4817,22 @@ func TestMCPMessageQueryDefaultsCapsAndValidation(t *testing.T) {
 		t.Fatalf("unexpected message type query: %+v err=%v", query, err)
 	}
 
+	cursor := encodeMCPMessageCursor(domainmcp.PlayerMessage{ID: 77, Date: 1700})
+	query, err = mcpMessageQuery(map[string]any{"cursor": cursor})
+	if err != nil || !query.HasCursor || query.CursorDate != 1700 || query.CursorID != 77 {
+		t.Fatalf("unexpected cursor query: %+v err=%v", query, err)
+	}
+
 	if _, err := mcpMessageQuery(map[string]any{"limit": true}); !errors.Is(err, domainmcp.ErrInvalidParams) {
 		t.Fatalf("expected invalid message limit error, got %v", err)
 	}
 	if _, err := mcpMessageQuery(map[string]any{"messageType": true}); !errors.Is(err, domainmcp.ErrInvalidParams) {
 		t.Fatalf("expected invalid message type error, got %v", err)
+	}
+	for _, cursor := range []any{"", "not-base64", base64.RawURLEncoding.EncodeToString([]byte("v2:1700:77")), base64.RawURLEncoding.EncodeToString([]byte("v1:-1:77")), base64.RawURLEncoding.EncodeToString([]byte("v1:1700:0")), true} {
+		if _, err := mcpMessageQuery(map[string]any{"cursor": cursor}); !errors.Is(err, domainmcp.ErrInvalidParams) {
+			t.Fatalf("expected invalid message cursor for %v, got %v", cursor, err)
+		}
 	}
 }
 
@@ -5452,7 +5471,7 @@ func (f fakeReadRepository) ListMCPMessages(_ context.Context, playerID int, que
 	if playerID != 42 {
 		return domainmcp.MessageList{}, errors.New("unexpected player")
 	}
-	if query.Limit != f.messageQuery.Limit || query.MessageType != f.messageQuery.MessageType || query.HasMessageType != f.messageQuery.HasMessageType || query.IncludeText != f.messageQuery.IncludeText {
+	if query.Limit != f.messageQuery.Limit || query.MessageType != f.messageQuery.MessageType || query.HasMessageType != f.messageQuery.HasMessageType || query.IncludeText != f.messageQuery.IncludeText || query.CursorDate != f.messageQuery.CursorDate || query.CursorID != f.messageQuery.CursorID || query.HasCursor != f.messageQuery.HasCursor {
 		return domainmcp.MessageList{}, errors.New("unexpected message query")
 	}
 	return f.messageList, nil

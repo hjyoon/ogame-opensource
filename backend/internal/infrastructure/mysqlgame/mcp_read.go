@@ -252,10 +252,15 @@ func (r MCPReadRepository) ListMCPMessages(ctx context.Context, playerID int, qu
 	if err != nil {
 		return domainmcp.MessageList{}, err
 	}
+	hasMore := len(rows) > query.Limit
+	if hasMore {
+		rows = rows[:query.Limit]
+	}
 	return domainmcp.MessageList{
 		PlayerID: playerID,
 		Count:    len(rows),
 		Limit:    query.Limit,
+		HasMore:  hasMore,
 		Messages: rows,
 	}, nil
 }
@@ -321,8 +326,12 @@ func (r MCPReadRepository) loadMCPMessageRows(ctx context.Context, messagesTable
 		statement += " AND pm = ?"
 		args = append(args, query.MessageType)
 	}
+	if query.HasCursor {
+		statement += " AND (date < ? OR (date = ? AND msg_id < ?))"
+		args = append(args, query.CursorDate, query.CursorDate, query.CursorID)
+	}
 	statement += " ORDER BY date DESC, msg_id DESC LIMIT ?"
-	args = append(args, query.Limit)
+	args = append(args, query.Limit+1)
 	rows, err := r.queryer.QueryContext(ctx, statement, args...)
 	if err != nil {
 		return nil, err

@@ -2626,6 +2626,9 @@ func (s Service) callListMessages(ctx context.Context, access domainmcp.Access, 
 	if err != nil {
 		return domainmcp.ToolCallResult{}, err
 	}
+	if messages.HasMore && len(messages.Messages) > 0 {
+		messages.NextCursor = encodeMCPMessageCursor(messages.Messages[len(messages.Messages)-1])
+	}
 	structured := map[string]any{"messages": messages}
 	text, _ := json.Marshal(structured)
 	return domainmcp.ToolCallResult{
@@ -4582,12 +4585,56 @@ func mcpMessageQuery(arguments map[string]any) (domainmcp.MessageQuery, error) {
 	if err != nil {
 		return domainmcp.MessageQuery{}, err
 	}
+	cursor, err := optionalStringArgument(arguments, "cursor")
+	if err != nil {
+		return domainmcp.MessageQuery{}, err
+	}
+	var cursorDate int64
+	var cursorID int
+	hasCursor := arguments != nil && arguments["cursor"] != nil
+	if hasCursor {
+		cursorDate, cursorID, err = decodeMCPMessageCursor(cursor)
+		if err != nil {
+			return domainmcp.MessageQuery{}, err
+		}
+	}
 	return domainmcp.MessageQuery{
 		Limit:          limit,
 		MessageType:    messageType,
 		HasMessageType: arguments != nil && arguments["messageType"] != nil,
 		IncludeText:    includeText,
+		CursorDate:     cursorDate,
+		CursorID:       cursorID,
+		HasCursor:      hasCursor,
 	}, nil
+}
+
+func encodeMCPMessageCursor(message domainmcp.PlayerMessage) string {
+	payload := fmt.Sprintf("v1:%d:%d", message.Date, message.ID)
+	return base64.RawURLEncoding.EncodeToString([]byte(payload))
+}
+
+func decodeMCPMessageCursor(cursor string) (int64, int, error) {
+	if strings.TrimSpace(cursor) == "" || len(cursor) > 128 {
+		return 0, 0, fmt.Errorf("%w: cursor is invalid", domainmcp.ErrInvalidParams)
+	}
+	payload, err := base64.RawURLEncoding.DecodeString(cursor)
+	if err != nil {
+		return 0, 0, fmt.Errorf("%w: cursor is invalid", domainmcp.ErrInvalidParams)
+	}
+	parts := strings.Split(string(payload), ":")
+	if len(parts) != 3 || parts[0] != "v1" {
+		return 0, 0, fmt.Errorf("%w: cursor is invalid", domainmcp.ErrInvalidParams)
+	}
+	date, err := strconv.ParseInt(parts[1], 10, 64)
+	if err != nil || date < 0 {
+		return 0, 0, fmt.Errorf("%w: cursor is invalid", domainmcp.ErrInvalidParams)
+	}
+	id, err := strconv.Atoi(parts[2])
+	if err != nil || id <= 0 {
+		return 0, 0, fmt.Errorf("%w: cursor is invalid", domainmcp.ErrInvalidParams)
+	}
+	return date, id, nil
 }
 
 func optionalStringArgument(arguments map[string]any, name string) (string, error) {
@@ -5039,7 +5086,7 @@ func listMessagesTool() domainmcp.Tool {
 	return domainmcp.Tool{
 		Name:        "list_messages",
 		Title:       "List Messages",
-		Description: "Return the authenticated player's message inbox rows without marking messages read or deleting expired rows.",
+		Description: "Return the authenticated player's newest message inbox rows without marking messages read or deleting expired rows. Follow nextCursor to read older pages.",
 		InputSchema: map[string]any{
 			"type": "object",
 			"properties": map[string]any{
@@ -5058,6 +5105,12 @@ func listMessagesTool() domainmcp.Tool {
 					"type":        "boolean",
 					"description": "Include message body text when true. Defaults to false.",
 				},
+				"cursor": map[string]any{
+					"type":        "string",
+					"minLength":   1,
+					"maxLength":   128,
+					"description": "Opaque nextCursor from a previous list_messages response.",
+				},
 			},
 			"additionalProperties": false,
 		},
@@ -5067,15 +5120,17 @@ func listMessagesTool() domainmcp.Tool {
 				"messages": map[string]any{
 					"type": "object",
 					"properties": map[string]any{
-						"playerId": map[string]any{"type": "integer"},
-						"count":    map[string]any{"type": "integer"},
-						"limit":    map[string]any{"type": "integer"},
+						"playerId":   map[string]any{"type": "integer"},
+						"count":      map[string]any{"type": "integer"},
+						"limit":      map[string]any{"type": "integer"},
+						"hasMore":    map[string]any{"type": "boolean"},
+						"nextCursor": map[string]any{"type": "string"},
 						"messages": map[string]any{
 							"type":  "array",
 							"items": map[string]any{"type": "object"},
 						},
 					},
-					"required": []string{"playerId", "count", "limit", "messages"},
+					"required": []string{"playerId", "count", "limit", "hasMore", "nextCursor", "messages"},
 				},
 			},
 			"required": []string{"messages"},

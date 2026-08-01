@@ -1,6 +1,6 @@
 # Migration Status
 
-Updated: 2026-08-01 KST, branch `hjyoon/golang`.
+Updated: 2026-08-02 KST, branch `hjyoon/golang`.
 
 React/Bun + Go migration tracker. Keep under 4KB; split details by topic.
 
@@ -12,7 +12,7 @@ React/Bun + Go migration tracker. Keep under 4KB; split details by topic.
 - Registration, activation, recovery, login/logout, session expiry, private cookies, IP/ban checks, and `/game` redirects are migrated.
 - `/api/game/*` implements overview, economy and queues, fleet/combat, galaxy, social/account, reports, officers/payment, and Admin/Bot operations.
 - Game mutations preserve math, permissions, effects, reports, and scheduler behavior through PHP/Go differential cases; due queues are atomically settled by a configurable background worker.
-- MCP supports scoped tokens, zero-percent production, projected option affordability, explicit empire aggregates, queue-worker health, and per-token throttling with IP guard and expiry.
+- MCP supports scoped tokens, cursor-paged messages, zero-percent production, projected option affordability, explicit empire aggregates, queue-worker health, and per-token throttling with IP guard and expiry.
 - The Go runtime supports MySQL by default and persistent SQLite as an optional pure-Go mode; see [SQLite](./SQLITE.md).
 - SQLite due-queue settlement shares the mutation lock; bootstrap honors legacy universe environment settings, and Overview failures use JSON logs.
 - One multi-target `Dockerfile` and one `docker-compose.yml` define the PHP oracle and both Go database modes.
@@ -43,7 +43,7 @@ OGAME_RUN_LEGACY_E2E=1 OGAME_GO_PORT=8890 OGAME_KEEP_GO_DOCKER=1 testing/e2e/run
 
 SQLite focused QA passes bootstrap, authenticated HTTP, registration/build mutation, queue completion, MCP/OAuth, coupons, Admin cron, and backup/restore. The full PHP differential baseline above remains MySQL-backed.
 
-The 2026-08-01 focused backend run passed `go test ./...` and the 97.0% internal coverage gate.
+The 2026-08-02 focused backend run passed `go test ./...` and the 97.0% internal coverage gate.
 
 ## Completion Statement
 
