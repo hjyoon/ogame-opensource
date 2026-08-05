@@ -2466,7 +2466,8 @@ func parseAdminCouponQueueEnd(dayMonth string, hourMinute string, now time.Time)
 	hour, minute := 0, 0
 	_, _ = fmt.Sscanf(dayMonth, "%d.%d", &day, &month)
 	_, _ = fmt.Sscanf(hourMinute, "%d:%d", &hour, &minute)
-	return int(time.Date(now.In(time.Local).Year(), time.Month(month), day, hour, minute, 0, 0, time.Local).Unix())
+	utc := now.UTC()
+	return int(time.Date(utc.Year(), time.Month(month), day, hour, minute, 0, 0, time.UTC).Unix())
 }
 
 func randomCouponCode() (string, error) {

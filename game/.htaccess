@@ -2,7 +2,7 @@ AddDefaultCharset UTF-8
 
 php_value error_reporting -1
 php_value display_errors 1
-php_value date.timezone 'Europe/Moscow'
+php_value date.timezone 'UTC'
 
 <Files config.php>
 order allow,deny

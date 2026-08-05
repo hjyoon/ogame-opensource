@@ -14,5 +14,5 @@ func useServerTimezone(t *testing.T, location *time.Location) {
 
 func useDefaultServerTimezone(t *testing.T) {
 	t.Helper()
-	useServerTimezone(t, time.FixedZone("Europe/Moscow", 3*60*60))
+	useServerTimezone(t, time.UTC)
 }

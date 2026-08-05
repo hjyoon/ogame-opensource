@@ -15,7 +15,6 @@ type Config struct {
 	Addr                 string
 	Environment          string
 	LogLevel             string
-	Timezone             string
 	StaticDir            string
 	LegacyAssetDir       string
 	LegacyGameDir        string
@@ -87,7 +86,6 @@ func Load() Config {
 		Addr:                 env("OGAME_HTTP_ADDR", ":8080"),
 		Environment:          env("OGAME_ENV", "development"),
 		LogLevel:             env("OGAME_LOG_LEVEL", "info"),
-		Timezone:             env("OGAME_TIMEZONE", "Europe/Moscow"),
 		StaticDir:            env("OGAME_STATIC_DIR", "frontend/dist"),
 		LegacyAssetDir:       env("OGAME_LEGACY_ASSET_DIR", "download"),
 		LegacyGameDir:        env("OGAME_LEGACY_GAME_DIR", "game"),

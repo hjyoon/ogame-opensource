@@ -53,8 +53,8 @@ func TestOverviewRepositoryReadsLegacyOverview(t *testing.T) {
 	if overview.Commander != "legor" || overview.Score.RawScore != 123456 || overview.Score.Rank != 7 || overview.Score.DisplayPoints() != 123 {
 		t.Fatalf("unexpected score overview: %+v", overview)
 	}
-	if overview.ServerTime != "Fri Jun 19 18:23:07" {
-		t.Fatalf("expected legacy server time, got %q", overview.ServerTime)
+	if overview.ServerTime != "Fri Jun 19 15:23:07" || overview.ServerTimeUnix != 1781882587 {
+		t.Fatalf("expected UTC server time, got %q (%d)", overview.ServerTime, overview.ServerTimeUnix)
 	}
 	if overview.CurrentPlanet.ID != 99 || overview.CurrentPlanet.Name != "Arakis" || overview.CurrentPlanet.Coordinates.Position != 3 {
 		t.Fatalf("unexpected current planet: %+v", overview.CurrentPlanet)
@@ -2469,13 +2469,10 @@ func TestOverviewRepositoryLoadOverviewUnionEventsEdges(t *testing.T) {
 	}
 }
 
-func TestFormatLegacyOverviewTimeUsesServerTimezone(t *testing.T) {
-	original := time.Local
-	time.Local = time.FixedZone("test", -4*60*60)
-	t.Cleanup(func() { time.Local = original })
-
+func TestFormatLegacyOverviewTimeUsesUTCServerTimezone(t *testing.T) {
+	useDefaultServerTimezone(t)
 	got := formatLegacyOverviewTime(time.Date(2026, 6, 19, 15, 23, 7, 0, time.UTC))
-	if got != "Fri Jun 19 11:23:07" {
+	if got != "Fri Jun 19 15:23:07" {
 		t.Fatalf("unexpected legacy overview time: %q", got)
 	}
 }

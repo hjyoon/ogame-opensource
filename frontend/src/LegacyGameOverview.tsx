@@ -17,6 +17,7 @@ import {
   type GameRoute
 } from "./gameRoutes";
 import { legacyChangelogRows } from "./legacyChangelogData";
+import { browserTimeZone, localTimeParts } from "./localTime";
 import { MCPGuidePage } from "./MCPGuidePage";
 
 export type GameOverviewStatus = {
@@ -487,7 +488,7 @@ export type GameJumpGateStatus = {
 export type GameOptionsStatus = {
   authenticated: boolean;
   issues: { code: string; message: string }[];
-  actionIssue?: { code: string; message: string };
+  actionIssue?: { code: string; message: string; timestamp?: number };
   options?: GameOptions;
 };
 
@@ -522,6 +523,7 @@ type GameOverview = {
   adminLevel: number;
   validated: boolean;
   serverTime?: string;
+  serverTimeUnix?: number;
   officers?: {
     commander: boolean;
     commanderDaysLeft: number;
@@ -1163,6 +1165,7 @@ type GameReport = {
   type: number;
   title: string;
   text: string;
+  date?: number;
   allowed: boolean;
 };
 
@@ -2771,7 +2774,7 @@ export function LegacyGameOverview({
         {route.key === "notes" && !notesError && notesIssue ? <LegacyMessage tone="error" text={notesIssue} /> : null}
         {route.key === "options" && optionsError ? <LegacyMessage tone="error" text={optionsError} /> : null}
         {route.key === "options" && !optionsError && optionsActionIssue ? (
-          <LegacyMessage tone="neutral" text={optionsActionIssue.message} />
+          <LegacyMessage tone="neutral" text={formatOptionsActionIssue(optionsActionIssue)} />
         ) : null}
         {route.key === "options" && !optionsError && !optionsActionIssue && optionsIssue ? (
           <LegacyMessage tone="error" text={optionsIssue} />
@@ -13314,7 +13317,12 @@ function MessagesTable({
                   <td
                     className="legacy-b b legacy-message-text"
                     colSpan={3}
-                    dangerouslySetInnerHTML={{ __html: sanitizeLegacyMessageHTML(message.text) }}
+                    dangerouslySetInnerHTML={{
+                      __html: sanitizeLegacyMessageHTML(
+                        message.text,
+                        message.type === 1 || message.type === 6 ? message.date : undefined
+                      )
+                    }}
                   />
                 </tr>
               ) : null}
@@ -13687,7 +13695,9 @@ function ReportTable({ report }: { report: GameReport }) {
           <tr>
             <td
               style={{ background: "transparent", fontSize: 16 }}
-              dangerouslySetInnerHTML={{ __html: report.allowed && report.text !== "" ? sanitizeLegacyMessageHTML(report.text) : "" }}
+              dangerouslySetInnerHTML={{
+                __html: report.allowed && report.text !== "" ? sanitizeLegacyMessageHTML(report.text, report.date) : ""
+              }}
             />
           </tr>
         </tbody>
@@ -14504,30 +14514,39 @@ function formatLegacyTimestamp(unixSeconds: number): string {
   if (unixSeconds <= 0) {
     return "";
   }
-  const date = new Date(unixSeconds * 1000);
+  const parts = localTimeParts(unixSeconds);
   const pad = (value: number) => value.toString().padStart(2, "0");
-  return `${date.getFullYear()}-${pad(date.getMonth() + 1)}-${pad(date.getDate())} ${pad(date.getHours())}:${pad(date.getMinutes())}:${pad(date.getSeconds())}`;
+  return `${parts.year}-${pad(parts.month)}-${pad(parts.day)} ${pad(parts.hour)}:${pad(parts.minute)}:${pad(parts.second)}`;
 }
 
 function formatLegacyVacationTimestamp(unixSeconds: number): string {
   if (unixSeconds <= 0) {
     return "";
   }
-  const date = new Date(unixSeconds * 1000);
+  const parts = localTimeParts(unixSeconds);
   const pad = (value: number) => value.toString().padStart(2, "0");
-  return `${pad(date.getDate())}.${pad(date.getMonth() + 1)}.${date.getFullYear()} ${pad(date.getHours())}:${pad(date.getMinutes())}:${pad(date.getSeconds())}`;
+  return `${pad(parts.day)}.${pad(parts.month)}.${parts.year} ${pad(parts.hour)}:${pad(parts.minute)}:${pad(parts.second)}`;
+}
+
+function formatOptionsActionIssue(issue: { message: string; timestamp?: number }): string {
+  if (!issue.timestamp || issue.timestamp <= 0) {
+    return issue.message;
+  }
+  return issue.message.replace(/\d{4}-\d{2}-\d{2} \d{2}:\d{2}:\d{2}$/, formatLegacyTimestamp(issue.timestamp));
 }
 
 function LegacyReportHTML({ html }: { html: string }) {
   return <div dangerouslySetInnerHTML={{ __html: sanitizeLegacyMessageHTML(html) }} />;
 }
 
-function sanitizeLegacyMessageHTML(value: string): string {
+function sanitizeLegacyMessageHTML(value: string, fallbackUnix?: number): string {
   if (typeof DOMParser === "undefined") {
     return value;
   }
   const doc = new DOMParser().parseFromString(`<div>${value}</div>`, "text/html");
   doc.querySelectorAll("script,style,iframe,object,embed,meta,link").forEach((node) => node.remove());
+  attachLegacyFallbackTime(doc, fallbackUnix);
+  localizeLegacyTimeElements(doc);
   doc.body.querySelectorAll("*").forEach((element) => {
     const reportPopup = legacyReportPopupFromOnClick(element.getAttribute("onclick") ?? "");
     if (reportPopup && element instanceof HTMLAnchorElement) {
@@ -14558,6 +14577,54 @@ function sanitizeLegacyMessageHTML(value: string): string {
     }
   });
   return doc.body.innerHTML;
+}
+
+function attachLegacyFallbackTime(doc: Document, fallbackUnix?: number): void {
+  if (!fallbackUnix || fallbackUnix <= 0 || doc.querySelector("time[data-ogame-unix]")) {
+    return;
+  }
+  const pattern = /\b\d{2}-\d{2} \d{2}:\d{2}:\d{2}\b/;
+  const walker = doc.createTreeWalker(doc.body, 4);
+  let node = walker.nextNode();
+  while (node) {
+    const textNode = node as Text;
+    const match = pattern.exec(textNode.data);
+    if (match?.index !== undefined) {
+      const tail = textNode.splitText(match.index + match[0].length);
+      textNode.deleteData(match.index, match[0].length);
+      const time = doc.createElement("time");
+      time.setAttribute("data-ogame-unix", String(fallbackUnix));
+      time.setAttribute("data-ogame-time-format", "message");
+      time.textContent = match[0];
+      tail.parentNode?.insertBefore(time, tail);
+      return;
+    }
+    node = walker.nextNode();
+  }
+}
+
+function localizeLegacyTimeElements(doc: Document): void {
+  const timeZone = browserTimeZone();
+  doc.querySelectorAll("time[data-ogame-unix]").forEach((element) => {
+    const seconds = Number(element.getAttribute("data-ogame-unix"));
+    if (!Number.isFinite(seconds)) {
+      return;
+    }
+    switch (element.getAttribute("data-ogame-time-format")) {
+      case "fleet":
+        element.textContent = formatFleetTimestamp(seconds);
+        break;
+      case "datetime":
+        element.textContent = formatLegacyDateTime(seconds);
+        break;
+      case "message":
+      default:
+        element.textContent = formatLegacyMessageDate(seconds);
+        break;
+    }
+    element.setAttribute("datetime", new Date(seconds * 1000).toISOString());
+    element.setAttribute("title", `Displayed in browser timezone ${timeZone}`);
+  });
 }
 
 function legacyAdminHTMLWithSession(value: string): string {
@@ -15888,6 +15955,30 @@ function OverviewNewsBox({ news }: { news: GameOverviewNews }) {
   );
 }
 
+function BrowserLocalClock({ serverTimeUnix }: { serverTimeUnix?: number }) {
+  const [currentUnix, setCurrentUnix] = React.useState(() =>
+    serverTimeUnix && serverTimeUnix > 0 ? serverTimeUnix : Math.floor(Date.now() / 1000)
+  );
+
+  React.useEffect(() => {
+    const baselineUnix = serverTimeUnix && serverTimeUnix > 0 ? serverTimeUnix : Math.floor(Date.now() / 1000);
+    const baselineBrowserTime = Date.now();
+    const update = () => {
+      setCurrentUnix(baselineUnix + Math.floor((Date.now() - baselineBrowserTime) / 1000));
+    };
+    update();
+    const interval = window.setInterval(update, 1000);
+    return () => window.clearInterval(interval);
+  }, [serverTimeUnix]);
+
+  const timeZone = browserTimeZone();
+  return (
+    <time dateTime={new Date(currentUnix * 1000).toISOString()} title={`Displayed in browser timezone ${timeZone}`}>
+      {formatLegacyDate(new Date(currentUnix * 1000))}
+    </time>
+  );
+}
+
 function OverviewTable({ overview, onBuildQueueComplete }: { overview: GameOverview; onBuildQueueComplete: () => void }) {
   const planet = overview.currentPlanet;
   const planetTitle =
@@ -15928,7 +16019,9 @@ function OverviewTable({ overview, onBuildQueueComplete }: { overview: GameOverv
         ) : null}
         <tr>
           <th>Server time</th>
-          <th colSpan={3}>{overview.serverTime || formatLegacyDate(new Date())}</th>
+          <th colSpan={3}>
+            <BrowserLocalClock serverTimeUnix={overview.serverTimeUnix} />
+          </th>
         </tr>
         <tr>
           <td className="legacy-c c" colSpan={4}>
@@ -16976,25 +17069,21 @@ function formatLegacyCountdown(totalSeconds: number): string {
 }
 
 function formatLegacyDate(date: Date): string {
-  const weekdays = ["Sun", "Mon", "Tue", "Wed", "Thu", "Fri", "Sat"];
-  const months = ["Jan", "Feb", "Mar", "Apr", "May", "Jun", "Jul", "Aug", "Sep", "Oct", "Nov", "Dec"];
-  return `${weekdays[date.getDay()]} ${months[date.getMonth()]} ${date.getDate()} ${date.getHours()}:${String(
-    date.getMinutes()
-  ).padStart(2, "0")}:${String(date.getSeconds()).padStart(2, "0")}`;
+  const parts = localTimeParts(date.getTime() / 1000);
+  return `${parts.weekday} ${legacyMonthNames[parts.month - 1]} ${parts.day} ${parts.hour}:${padLocalTimePart(
+    parts.minute
+  )}:${padLocalTimePart(parts.second)}`;
 }
 
 function formatLegacyDateTime(seconds: number): string {
-  const date = new Date(seconds * 1000);
-  return `${date.getUTCFullYear()}-${String(date.getUTCMonth() + 1).padStart(2, "0")}-${String(
-    date.getUTCDate()
-  ).padStart(2, "0")} ${String(date.getUTCHours()).padStart(2, "0")}:${String(date.getUTCMinutes()).padStart(
-    2,
-    "0"
-  )}:${String(date.getUTCSeconds()).padStart(2, "0")}`;
+  const parts = localTimeParts(seconds);
+  return `${parts.year}-${padLocalTimePart(parts.month)}-${padLocalTimePart(parts.day)} ${padLocalTimePart(
+    parts.hour
+  )}:${padLocalTimePart(parts.minute)}:${padLocalTimePart(parts.second)}`;
 }
 
 function formatLegacyServerDateTime(seconds: number): string {
-  return formatLegacyDateTime(seconds + 3 * 60 * 60);
+  return formatLegacyDateTime(seconds);
 }
 
 function formatLegacyAdminDateTime(seconds: number): string {
@@ -17002,55 +17091,48 @@ function formatLegacyAdminDateTime(seconds: number): string {
 }
 
 function formatLegacyAdminFleetLogDateParts(seconds: number): { date: string; time: string } {
-  const date = new Date((seconds + 3 * 60 * 60) * 1000);
+  const parts = localTimeParts(seconds);
   return {
-    date: `${String(date.getUTCDate()).padStart(2, "0")}.${String(date.getUTCMonth() + 1).padStart(2, "0")}.${date.getUTCFullYear()}`,
-    time: `${String(date.getUTCHours()).padStart(2, "0")}:${String(date.getUTCMinutes()).padStart(2, "0")}:${String(date.getUTCSeconds()).padStart(2, "0")}`,
+    date: `${padLocalTimePart(parts.day)}.${padLocalTimePart(parts.month)}.${parts.year}`,
+    time: `${padLocalTimePart(parts.hour)}:${padLocalTimePart(parts.minute)}:${padLocalTimePart(parts.second)}`,
   };
 }
 
 function formatLegacyAdminBrowseDateParts(seconds: number): { date: string; time: string } {
-  const date = new Date((seconds + 3 * 60 * 60) * 1000);
-  const months = ["Jan", "Feb", "Mar", "Apr", "May", "Jun", "Jul", "Aug", "Sep", "Oct", "Nov", "Dec"];
+  const parts = localTimeParts(seconds);
   return {
-    date: `${String(date.getUTCDate()).padStart(2, "0")} ${months[date.getUTCMonth()]} ${date.getUTCFullYear()}`,
-    time: `${String(date.getUTCHours()).padStart(2, "0")}:${String(date.getUTCMinutes()).padStart(2, "0")}:${String(date.getUTCSeconds()).padStart(2, "0")}`,
+    date: `${padLocalTimePart(parts.day)} ${legacyMonthNames[parts.month - 1]} ${parts.year}`,
+    time: `${padLocalTimePart(parts.hour)}:${padLocalTimePart(parts.minute)}:${padLocalTimePart(parts.second)}`,
   };
 }
 
 function formatLegacyMessageDate(seconds: number): string {
-  const date = new Date((seconds + 3 * 60 * 60) * 1000);
-  return `${String(date.getUTCMonth() + 1).padStart(2, "0")}-${String(date.getUTCDate()).padStart(2, "0")} ${String(
-    date.getUTCHours()
-  ).padStart(2, "0")}:${String(date.getUTCMinutes()).padStart(2, "0")}:${String(date.getUTCSeconds()).padStart(2, "0")}`;
+  const parts = localTimeParts(seconds);
+  return `${padLocalTimePart(parts.month)}-${padLocalTimePart(parts.day)} ${padLocalTimePart(
+    parts.hour
+  )}:${padLocalTimePart(parts.minute)}:${padLocalTimePart(parts.second)}`;
 }
 
 function formatLegacyAdminMessageDate(seconds: number): string {
-  const date = new Date((seconds + 3 * 60 * 60) * 1000);
-  return `${String(date.getUTCMonth() + 1).padStart(2, "0")}-${String(date.getUTCDate()).padStart(2, "0")} ${String(
-    date.getUTCHours()
-  ).padStart(2, "0")}:${String(date.getUTCMinutes()).padStart(2, "0")}:${String(date.getUTCSeconds()).padStart(2, "0")}`;
+  return formatLegacyMessageDate(seconds);
 }
 
 function formatLegacyAdminUserLogDate(seconds: number): string {
-  const date = new Date((seconds + 3 * 60 * 60) * 1000);
-  return `${String(date.getUTCDate()).padStart(2, "0")}.${String(date.getUTCMonth() + 1).padStart(2, "0")}.${date.getUTCFullYear()} ${String(
-    date.getUTCHours()
-  ).padStart(2, "0")}:${String(date.getUTCMinutes()).padStart(2, "0")}:${String(date.getUTCSeconds()).padStart(2, "0")}`;
+  const parts = localTimeParts(seconds);
+  return `${padLocalTimePart(parts.day)}.${padLocalTimePart(parts.month)}.${parts.year} ${padLocalTimePart(
+    parts.hour
+  )}:${padLocalTimePart(parts.minute)}:${padLocalTimePart(parts.second)}`;
 }
 
 function formatLegacyAdminQueueDate(seconds: number): string {
-  const date = new Date((seconds + 3 * 60 * 60) * 1000);
-  return `${String(date.getUTCDate()).padStart(2, "0")}.${String(date.getUTCMonth() + 1).padStart(2, "0")}.${date.getUTCFullYear()} ${String(
-    date.getUTCHours()
-  ).padStart(2, "0")}:${String(date.getUTCMinutes()).padStart(2, "0")}:${String(date.getUTCSeconds()).padStart(2, "0")}`;
+  return formatLegacyAdminUserLogDate(seconds);
 }
 
 function formatLegacyAdminBattleReportDate(seconds: number): string {
-  const date = new Date((seconds + 3 * 60 * 60) * 1000);
-  return `${date.getUTCFullYear()}.${String(date.getUTCMonth() + 1).padStart(2, "0")}.${String(date.getUTCDate()).padStart(2, "0")} ${String(
-    date.getUTCHours()
-  ).padStart(2, "0")}:${String(date.getUTCMinutes()).padStart(2, "0")}:${String(date.getUTCSeconds()).padStart(2, "0")}`;
+  const parts = localTimeParts(seconds);
+  return `${parts.year}.${padLocalTimePart(parts.month)}.${padLocalTimePart(parts.day)} ${padLocalTimePart(
+    parts.hour
+  )}:${padLocalTimePart(parts.minute)}:${padLocalTimePart(parts.second)}`;
 }
 
 function formatLegacyStatisticsDateTime(seconds: number): string {
@@ -17058,12 +17140,16 @@ function formatLegacyStatisticsDateTime(seconds: number): string {
 }
 
 function formatFleetTimestamp(seconds: number): string {
-  const date = new Date((seconds + 3 * 60 * 60) * 1000);
-  const weekdays = ["Sun", "Mon", "Tue", "Wed", "Thu", "Fri", "Sat"];
-  const months = ["Jan", "Feb", "Mar", "Apr", "May", "Jun", "Jul", "Aug", "Sep", "Oct", "Nov", "Dec"];
-  return `${weekdays[date.getUTCDay()]} ${months[date.getUTCMonth()]} ${date.getUTCDate()} ${date.getUTCHours()}:${String(
-    date.getUTCMinutes()
-  ).padStart(2, "0")}:${String(date.getUTCSeconds()).padStart(2, "0")}`;
+  const parts = localTimeParts(seconds);
+  return `${parts.weekday} ${legacyMonthNames[parts.month - 1]} ${parts.day} ${parts.hour}:${padLocalTimePart(
+    parts.minute
+  )}:${padLocalTimePart(parts.second)}`;
+}
+
+const legacyMonthNames = ["Jan", "Feb", "Mar", "Apr", "May", "Jun", "Jul", "Aug", "Sep", "Oct", "Nov", "Dec"];
+
+function padLocalTimePart(value: number): string {
+  return String(value).padStart(2, "0");
 }
 
 function formatLegacyNumber(value: number): string {

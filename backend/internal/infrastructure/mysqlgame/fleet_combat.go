@@ -5,7 +5,6 @@ import (
 	"errors"
 	"fmt"
 	"strings"
-	"time"
 
 	domaingame "github.com/hjyoon/ogame-opensource/backend/internal/domain/game"
 )
@@ -264,7 +263,7 @@ func battleReportLinkSubject(reportID int64, value fleetMessageContext, style st
 
 func unguardedBattleReport(value fleetMessageContext, state unguardedAttackState, fleet recallFleetRow, captured domaingame.Resources, moon battleMoonCreation, at int64) string {
 	var report strings.Builder
-	fmt.Fprintf(&report, "At %s the following fleets met in battle::<br>", time.Unix(at, 0).Format("01-02 15:04:05"))
+	fmt.Fprintf(&report, "At %s the following fleets met in battle::<br>", clientLocalTimeHTML(at, clientTimeFormatMessage))
 	report.WriteString("<table border=1 width=100%><tr>")
 	report.WriteString(unguardedBattleSlot("Attacker", value.OriginOwnerName, value.OriginGalaxy, value.OriginSystem, value.OriginPosition, state.OriginWeapon, state.OriginShield, state.OriginArmour, fleet.Ships))
 	report.WriteString("</tr></table><table border=1 width=100%><tr>")

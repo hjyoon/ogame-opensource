@@ -13,7 +13,7 @@ import (
 
 func TestReportRepositoryReadsOwnedReport(t *testing.T) {
 	queryer := &fakeQueryer{results: []fakeQueryResult{
-		{rows: fakeRowsFromValues([]any{42, domaingame.MessageTypeBattleReportText, "<table>battle</table>", 0, 7})},
+		{rows: fakeRowsFromValues([]any{42, domaingame.MessageTypeBattleReportText, "<table>battle</table>", int64(1700), 0, 7})},
 	}}
 	repository := NewReportRepositoryWithQueryer(queryer, "ogame_")
 
@@ -21,7 +21,7 @@ func TestReportRepositoryReadsOwnedReport(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	if !report.Allowed || report.Title != domaingame.ReportTitleBattle || report.Text != "<table>battle</table>" {
+	if !report.Allowed || report.Title != domaingame.ReportTitleBattle || report.Text != "<table>battle</table>" || report.Date != 1700 {
 		t.Fatalf("unexpected owned report: %+v", report)
 	}
 	if !strings.Contains(queryer.calls[0].sql, "FROM `ogame_messages`") || queryer.calls[0].args[0] != 42 || queryer.calls[0].args[1] != 11 {
@@ -41,14 +41,14 @@ func TestNewReportRepositoryKeepsSQLQueryer(t *testing.T) {
 
 func TestReportRepositoryMapsMCPReport(t *testing.T) {
 	repository := NewReportRepositoryWithQueryer(&fakeQueryer{results: []fakeQueryResult{
-		{rows: fakeRowsFromValues([]any{42, domaingame.MessageTypeBattleReportText, "<table>battle</table>", 0, 7})},
+		{rows: fakeRowsFromValues([]any{42, domaingame.MessageTypeBattleReportText, "<table>battle</table>", int64(1700), 0, 7})},
 	}}, "ogame_")
 
 	report, err := repository.GetMCPReport(context.Background(), 42, domainmcp.ReportCommand{ReportID: 11})
 	if err != nil {
 		t.Fatalf("GetMCPReport returned error: %v", err)
 	}
-	if report.PlayerID != 42 || report.ID != 11 || report.Title != domaingame.ReportTitleBattle || report.Text != "<table>battle</table>" || !report.Allowed {
+	if report.PlayerID != 42 || report.ID != 11 || report.Title != domaingame.ReportTitleBattle || report.Text != "<table>battle</table>" || report.Date != 1700 || !report.Allowed {
 		t.Fatalf("unexpected MCP report: %+v", report)
 	}
 
@@ -59,7 +59,7 @@ func TestReportRepositoryMapsMCPReport(t *testing.T) {
 
 func TestReportRepositoryAllowsSameAllianceSpyReportOnly(t *testing.T) {
 	repository := NewReportRepositoryWithQueryer(&fakeQueryer{results: []fakeQueryResult{
-		{rows: fakeRowsFromValues([]any{77, domaingame.MessageTypeSpyReport, "spy", 5, 5})},
+		{rows: fakeRowsFromValues([]any{77, domaingame.MessageTypeSpyReport, "spy", int64(1700), 5, 5})},
 	}}, "ogame_")
 	report, err := repository.GetReport(context.Background(), appgame.ReportQuery{PlayerID: 42, ReportID: 12})
 	if err != nil {
@@ -70,7 +70,7 @@ func TestReportRepositoryAllowsSameAllianceSpyReportOnly(t *testing.T) {
 	}
 
 	repository = NewReportRepositoryWithQueryer(&fakeQueryer{results: []fakeQueryResult{
-		{rows: fakeRowsFromValues([]any{77, domaingame.MessageTypeBattleReportText, "battle", 5, 5})},
+		{rows: fakeRowsFromValues([]any{77, domaingame.MessageTypeBattleReportText, "battle", int64(1700), 5, 5})},
 	}}, "ogame_")
 	report, err = repository.GetReport(context.Background(), appgame.ReportQuery{PlayerID: 42, ReportID: 13})
 	if err != nil {
@@ -107,14 +107,14 @@ func TestReportRepositoryReturnsQueryAndScanErrors(t *testing.T) {
 	}
 
 	repository = NewReportRepositoryWithQueryer(&fakeQueryer{results: []fakeQueryResult{
-		{rows: fakeRowsFromValues([]any{"bad", domaingame.MessageTypeSpyReport, "spy", 5, 5})},
+		{rows: fakeRowsFromValues([]any{"bad", domaingame.MessageTypeSpyReport, "spy", int64(1700), 5, 5})},
 	}}, "ogame_")
 	if _, err := repository.GetReport(context.Background(), appgame.ReportQuery{PlayerID: 42, ReportID: 11}); err == nil || !strings.Contains(err.Error(), "expected int") {
 		t.Fatalf("expected scan error, got %v", err)
 	}
 
 	repository = NewReportRepositoryWithQueryer(&fakeQueryer{results: []fakeQueryResult{
-		{rows: fakeRowsFromValuesWithErr(errors.New("report rows failed"), []any{42, domaingame.MessageTypeSpyReport, "spy", 5, 5})},
+		{rows: fakeRowsFromValuesWithErr(errors.New("report rows failed"), []any{42, domaingame.MessageTypeSpyReport, "spy", int64(1700), 5, 5})},
 	}}, "ogame_")
 	if _, err := repository.GetReport(context.Background(), appgame.ReportQuery{PlayerID: 42, ReportID: 11}); err == nil || !strings.Contains(err.Error(), "report rows failed") {
 		t.Fatalf("expected rows error, got %v", err)

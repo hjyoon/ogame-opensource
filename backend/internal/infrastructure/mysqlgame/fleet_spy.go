@@ -292,7 +292,7 @@ func spyReport(value fleetMessageContext, state spyArrivalState, holding domaing
 	targetLink := fleetGalaxyLinkRaw(value.TargetGalaxy, value.TargetSystem, value.TargetPosition)
 	subject := fmt.Sprintf("\n<span class=\"espionagereport\">\n%s\n%s", expeditionFormat(expeditionLocaleValue(language, "SPY_SUBJ"), value.TargetName), targetLink)
 	var report strings.Builder
-	fmt.Fprintf(&report, "<table width=400><tr><td class=c colspan=4>%s %s %s</td></tr>\n", expeditionFormat(expeditionLocaleValue(language, "SPY_RESOURCES"), value.TargetName), targetLink, expeditionFormat(expeditionLocaleValue(language, "SPY_PLAYER"), value.TargetOwnerName, time.Unix(at, 0).Format("01-02 15:04:05")))
+	fmt.Fprintf(&report, "<table width=400><tr><td class=c colspan=4>%s %s %s</td></tr>\n", expeditionFormat(expeditionLocaleValue(language, "SPY_RESOURCES"), value.TargetName), targetLink, expeditionFormat(expeditionLocaleValue(language, "SPY_PLAYER"), value.TargetOwnerName, clientLocalTimeHTML(at, clientTimeFormatMessage)))
 	fmt.Fprintf(&report, "</div></font></TD></TR><tr><td>%s</td><td>%s</td>\n", expeditionLocaleValue(language, "SPY_M"), fleetLegacyNumber(value.TargetMetal))
 	fmt.Fprintf(&report, "<td>%s</td><td>%s</td></tr>\n", expeditionLocaleValue(language, "SPY_K"), fleetLegacyNumber(value.TargetCrystal))
 	fmt.Fprintf(&report, "<tr><td>%s</td><td>%s</td>\n", expeditionLocaleValue(language, "SPY_D"), fleetLegacyNumber(value.TargetDeuterium))

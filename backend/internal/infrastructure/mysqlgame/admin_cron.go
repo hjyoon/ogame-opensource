@@ -302,7 +302,7 @@ func (r AdminRepository) insertAdminCronDebug(ctx context.Context, debugTable st
 }
 
 func (r AdminRepository) adminCronLocation() *time.Location {
-	return time.Local
+	return time.UTC
 }
 
 func nextAdminCronStatsTime(at time.Time) time.Time {

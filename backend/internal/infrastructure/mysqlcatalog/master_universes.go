@@ -64,9 +64,11 @@ func DSN(config MasterDBConfig) string {
 	cfg.Timeout = 2 * time.Second
 	cfg.ReadTimeout = 2 * time.Second
 	cfg.WriteTimeout = 2 * time.Second
+	cfg.Loc = time.UTC
 	cfg.Params = map[string]string{
 		"charset":   "utf8mb4",
 		"collation": "utf8mb4_general_ci",
+		"time_zone": "'+00:00'",
 	}
 	return cfg.FormatDSN()
 }

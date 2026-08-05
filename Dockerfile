@@ -108,6 +108,7 @@ COPY download /srv/ogame/download
 COPY game /srv/ogame/game
 RUN mkdir -p /srv/ogame/game/temp /srv/ogame/data && chown -R ogame:ogame /srv/ogame/game/temp /srv/ogame/data
 ENV OGAME_ENV=production
+ENV TZ=UTC
 ENV OGAME_HTTP_ADDR=:8080
 ENV OGAME_STATIC_DIR=/srv/ogame/frontend
 ENV OGAME_LEGACY_ASSET_DIR=/srv/ogame/download

@@ -20,8 +20,9 @@ type gameOptionsResponse struct {
 }
 
 type gameOptionsActionIssue struct {
-	Code    string `json:"code"`
-	Message string `json:"message"`
+	Code      string `json:"code"`
+	Message   string `json:"message"`
+	Timestamp int64  `json:"timestamp,omitempty"`
 }
 
 type gameOptionsSummary struct {
@@ -358,7 +359,7 @@ func toGameOptionsActionIssue(issue *domaingame.OptionsActionIssue) *gameOptions
 	if issue == nil {
 		return nil
 	}
-	return &gameOptionsActionIssue{Code: issue.Code, Message: issue.Message}
+	return &gameOptionsActionIssue{Code: issue.Code, Message: issue.Message, Timestamp: issue.Timestamp}
 }
 
 func formChecked(r *http.Request, key string) bool {

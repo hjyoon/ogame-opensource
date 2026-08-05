@@ -3,8 +3,8 @@ package game
 import "testing"
 
 func TestNewReportMatchesLegacyTitleAndAccess(t *testing.T) {
-	spy := NewReport(11, MessageTypeSpyReport, "<table>spy</table>", true)
-	if spy.Title != ReportTitleSpy || spy.Text == "" || !spy.Allowed {
+	spy := NewReport(11, MessageTypeSpyReport, "<table>spy</table>", true).WithDate(1700)
+	if spy.Title != ReportTitleSpy || spy.Text == "" || spy.Date != 1700 || !spy.Allowed {
 		t.Fatalf("unexpected spy report: %+v", spy)
 	}
 

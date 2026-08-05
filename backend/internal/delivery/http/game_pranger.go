@@ -30,11 +30,13 @@ type gamePrangerSummary struct {
 }
 
 type gamePrangerEntryResponse struct {
-	BanWhen   string `json:"banWhen"`
-	AdminName string `json:"adminName"`
-	UserName  string `json:"userName"`
-	BanUntil  string `json:"banUntil"`
-	Reason    string `json:"reason"`
+	BanWhen      string `json:"banWhen"`
+	BanWhenUnix  int64  `json:"banWhenUnix"`
+	AdminName    string `json:"adminName"`
+	UserName     string `json:"userName"`
+	BanUntil     string `json:"banUntil"`
+	BanUntilUnix int64  `json:"banUntilUnix"`
+	Reason       string `json:"reason"`
 }
 
 func (a app) handleGamePranger(w http.ResponseWriter, r *http.Request) {
@@ -69,11 +71,13 @@ func toGamePrangerSummary(pranger domaingame.Pranger) gamePrangerSummary {
 	entries := make([]gamePrangerEntryResponse, 0, len(pranger.Entries))
 	for _, entry := range pranger.Entries {
 		entries = append(entries, gamePrangerEntryResponse{
-			BanWhen:   legacyPrangerBanDate(entry.BanWhen),
-			AdminName: entry.AdminName,
-			UserName:  entry.UserName,
-			BanUntil:  legacyPrangerDate(entry.BanUntil),
-			Reason:    entry.Reason,
+			BanWhen:      legacyPrangerBanDate(entry.BanWhen),
+			BanWhenUnix:  entry.BanWhen,
+			AdminName:    entry.AdminName,
+			UserName:     entry.UserName,
+			BanUntil:     legacyPrangerDate(entry.BanUntil),
+			BanUntilUnix: entry.BanUntil,
+			Reason:       entry.Reason,
 		})
 	}
 	return gamePrangerSummary{
@@ -128,7 +132,7 @@ func legacyPrangerHTML(session string, pranger domaingame.Pranger) string {
 	for _, entry := range pranger.Entries {
 		builder.WriteString("        <tr height=\"20\">\n")
 		builder.WriteString("     <th>")
-		builder.WriteString(legacyPrangerBanDate(entry.BanWhen))
+		builder.WriteString(legacyPrangerBrowserTime(entry.BanWhen))
 		builder.WriteString(" </th>\n\n")
 		builder.WriteString("          <th>\n")
 		builder.WriteString("       ")
@@ -138,7 +142,7 @@ func legacyPrangerHTML(session string, pranger domaingame.Pranger) string {
 		builder.WriteString(html.EscapeString(entry.UserName))
 		builder.WriteString("</th>\n")
 		builder.WriteString("     <th>")
-		builder.WriteString(legacyPrangerDate(entry.BanUntil))
+		builder.WriteString(legacyPrangerBrowserTime(entry.BanUntil))
 		builder.WriteString("</th>\n")
 		builder.WriteString("     <th>")
 		builder.WriteString(entry.Reason)
@@ -160,8 +164,34 @@ func legacyPrangerHTML(session string, pranger domaingame.Pranger) string {
 	builder.WriteString("      </th>\n")
 	builder.WriteString("   </tr>\n")
 	builder.WriteString("   </table>\n")
+	builder.WriteString(legacyPrangerLocalTimeScript)
 	return builder.String()
 }
+
+func legacyPrangerBrowserTime(timestamp int64) string {
+	utc := time.Unix(timestamp, 0).UTC()
+	return fmt.Sprintf(
+		`<time datetime="%s" data-ogame-unix="%d">%s</time>`,
+		utc.Format(time.RFC3339),
+		timestamp,
+		formatLegacyPrangerDate(utc),
+	)
+}
+
+const legacyPrangerLocalTimeScript = `<script>
+(() => {
+  const weekdays = ["Sun", "Mon", "Tue", "Wed", "Thu", "Fri", "Sat"];
+  const months = ["Jan", "Feb", "Mar", "Apr", "May", "Jun", "Jul", "Aug", "Sep", "Oct", "Nov", "Dec"];
+  const pad = (value) => String(value).padStart(2, "0");
+  const timezone = Intl.DateTimeFormat().resolvedOptions().timeZone || "UTC";
+  document.querySelectorAll("time[data-ogame-unix]").forEach((element) => {
+    const date = new Date(Number(element.dataset.ogameUnix) * 1000);
+    if (Number.isNaN(date.getTime())) return;
+    element.textContent = weekdays[date.getDay()] + " " + months[date.getMonth()] + " " + date.getDate() + " " + date.getFullYear() + " " + date.getHours() + ":" + pad(date.getMinutes()) + ":" + pad(date.getSeconds());
+    element.title = "Displayed in browser timezone " + timezone;
+  });
+})();
+</script>`
 
 func legacyPrangerPageURL(session string, internal bool, from int) string {
 	if internal {
@@ -175,7 +205,7 @@ func legacyPrangerDate(timestamp int64) string {
 }
 
 func legacyPrangerBanDate(timestamp int64) string {
-	return formatLegacyPrangerDate(time.Unix(timestamp, 0).In(time.Local))
+	return formatLegacyPrangerDate(time.Unix(timestamp, 0).UTC())
 }
 
 func formatLegacyPrangerDate(date time.Time) string {

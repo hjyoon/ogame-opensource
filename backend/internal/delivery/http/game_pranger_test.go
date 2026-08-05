@@ -32,8 +32,11 @@ func TestLegacyPrangerDirectPathRendersPublicPillory(t *testing.T) {
 	if recorder.Code != http.StatusOK || !strings.Contains(body, "OGame Pillory Universe 7") || !strings.Contains(body, "Ban Date") {
 		t.Fatalf("unexpected pranger response: status=%d body=%s", recorder.Code, body)
 	}
-	if !strings.Contains(body, "Sat Mar 9 2024 19:00:00") || !strings.Contains(body, "Sat Mar 9 2024 17:00:00") {
-		t.Fatalf("expected legacy date formatting, got %s", body)
+	if !strings.Contains(body, "Sat Mar 9 2024 16:00:00") || !strings.Contains(body, "Sat Mar 9 2024 17:00:00") {
+		t.Fatalf("expected UTC date formatting, got %s", body)
+	}
+	if strings.Count(body, `data-ogame-unix=`) != 2 || !strings.Contains(body, "browser timezone") {
+		t.Fatalf("expected browser-local time metadata, got %s", body)
 	}
 	if !strings.Contains(body, "Admin &lt;One&gt;") || !strings.Contains(body, "Player &lt;Two&gt;") {
 		t.Fatalf("expected names to be escaped, got %s", body)
@@ -94,7 +97,7 @@ func TestGamePrangerAPIRendersStructuredPillory(t *testing.T) {
 	if response.Pranger.Universe != 7 || !response.Pranger.HasPrevious || response.Pranger.PreviousFrom != 0 || response.Pranger.HasNext {
 		t.Fatalf("unexpected pagination summary: %+v", response.Pranger)
 	}
-	if len(response.Pranger.Entries) != 1 || response.Pranger.Entries[0].BanWhen != "Sat Mar 9 2024 19:00:00" ||
+	if len(response.Pranger.Entries) != 1 || response.Pranger.Entries[0].BanWhen != "Sat Mar 9 2024 16:00:00" || response.Pranger.Entries[0].BanWhenUnix != 1710000000 || response.Pranger.Entries[0].BanUntilUnix != 1710003600 ||
 		response.Pranger.Entries[0].AdminName != "Admin <One>" || response.Pranger.Entries[0].Reason != "Testing" {
 		t.Fatalf("unexpected mapped entries: %+v", response.Pranger.Entries)
 	}
@@ -147,8 +150,8 @@ func TestLegacyPrangerHelpers(t *testing.T) {
 	if got := legacyPrangerDate(0); got != "Thu Jan 1 1970 0:00:00" {
 		t.Fatalf("unexpected epoch date: %s", got)
 	}
-	if got := legacyPrangerBanDate(0); got != "Thu Jan 1 1970 9:00:00" {
-		t.Fatalf("unexpected server-local epoch date: %s", got)
+	if got := legacyPrangerBanDate(0); got != "Thu Jan 1 1970 0:00:00" {
+		t.Fatalf("unexpected UTC epoch date: %s", got)
 	}
 	if got := (Dependencies{}).CurrentUniverseNumber(); got != 1 {
 		t.Fatalf("expected default universe 1, got %d", got)

@@ -176,10 +176,10 @@ func TestAdminRepositoryMutatesDatabaseBackupCreateRestoreDelete(t *testing.T) {
 	if err != nil {
 		t.Fatalf("create mutate returned error: %v", err)
 	}
-	if createIssue.Code != domaingame.AdminIssueActionSaved || !strings.Contains(createIssue.Message, "temp/backup_02012026_060405.json") {
+	if createIssue.Code != domaingame.AdminIssueActionSaved || !strings.Contains(createIssue.Message, "temp/backup_02012026_030405.json") {
 		t.Fatalf("unexpected create issue: %+v", createIssue)
 	}
-	backupPath := filepath.Join(root, "temp", "backup_02012026_060405.json")
+	backupPath := filepath.Join(root, "temp", "backup_02012026_030405.json")
 	body, err := os.ReadFile(backupPath)
 	if err != nil {
 		t.Fatalf("read created backup: %v", err)
@@ -190,7 +190,7 @@ func TestAdminRepositoryMutatesDatabaseBackupCreateRestoreDelete(t *testing.T) {
 
 	restoreIssue, err := repository.mutateAdminDatabase(context.Background(), appgame.AdminMutationQuery{
 		Action:   domaingame.AdminActionDatabaseRestore,
-		FileName: "backup_02012026_060405.json",
+		FileName: "backup_02012026_030405.json",
 	})
 
 	if err != nil {
@@ -202,7 +202,7 @@ func TestAdminRepositoryMutatesDatabaseBackupCreateRestoreDelete(t *testing.T) {
 
 	deleteIssue, err := repository.mutateAdminDatabase(context.Background(), appgame.AdminMutationQuery{
 		Action:   domaingame.AdminActionDatabaseDelete,
-		FileName: "backup_02012026_060405.json",
+		FileName: "backup_02012026_030405.json",
 	})
 
 	if err != nil {

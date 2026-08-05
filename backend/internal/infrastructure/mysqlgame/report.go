@@ -38,6 +38,7 @@ func (r ReportRepository) GetMCPReport(ctx context.Context, playerID int, comman
 		Type:     report.Type,
 		Title:    report.Title,
 		Text:     report.Text,
+		Date:     report.Date,
 		Allowed:  report.Allowed,
 	}, nil
 }
@@ -55,7 +56,7 @@ func (r ReportRepository) GetReport(ctx context.Context, query appgame.ReportQue
 	rows, err := r.queryer.QueryContext(
 		ctx,
 		fmt.Sprintf(
-			"SELECT m.owner_id, m.pm, m.text, COALESCE(owner.ally_id, 0), COALESCE(viewer.ally_id, 0) FROM %s m LEFT JOIN %s owner ON owner.player_id = m.owner_id LEFT JOIN %s viewer ON viewer.player_id = ? WHERE m.msg_id = ? LIMIT 1",
+			"SELECT m.owner_id, m.pm, m.text, m.date, COALESCE(owner.ally_id, 0), COALESCE(viewer.ally_id, 0) FROM %s m LEFT JOIN %s owner ON owner.player_id = m.owner_id LEFT JOIN %s viewer ON viewer.player_id = ? WHERE m.msg_id = ? LIMIT 1",
 			messagesTable,
 			usersTable,
 			usersTable,
@@ -77,9 +78,10 @@ func (r ReportRepository) GetReport(ctx context.Context, query appgame.ReportQue
 	var ownerID int
 	var messageType int
 	var text string
+	var date int64
 	var ownerAllianceID int
 	var viewerAllianceID int
-	if err := rows.Scan(&ownerID, &messageType, &text, &ownerAllianceID, &viewerAllianceID); err != nil {
+	if err := rows.Scan(&ownerID, &messageType, &text, &date, &ownerAllianceID, &viewerAllianceID); err != nil {
 		return domaingame.Report{}, err
 	}
 	if err := rows.Err(); err != nil {
@@ -88,5 +90,5 @@ func (r ReportRepository) GetReport(ctx context.Context, query appgame.ReportQue
 
 	allowed := ownerID == query.PlayerID ||
 		(messageType == domaingame.MessageTypeSpyReport && ownerAllianceID != 0 && ownerAllianceID == viewerAllianceID)
-	return domaingame.NewReport(query.ReportID, messageType, text, allowed), nil
+	return domaingame.NewReport(query.ReportID, messageType, text, allowed).WithDate(date), nil
 }

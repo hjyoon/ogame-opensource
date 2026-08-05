@@ -10,6 +10,7 @@ type Report struct {
 	Type    int
 	Title   string
 	Text    string
+	Date    int64
 	Allowed bool
 }
 
@@ -22,4 +23,9 @@ func NewReport(id int, messageType int, text string, allowed bool) Report {
 		text = ""
 	}
 	return Report{ID: id, Type: messageType, Title: title, Text: text, Allowed: allowed}
+}
+
+func (r Report) WithDate(date int64) Report {
+	r.Date = date
+	return r
 }

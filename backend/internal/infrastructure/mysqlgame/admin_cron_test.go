@@ -314,11 +314,11 @@ func TestAdminCronTimeAndLocalizationHelpers(t *testing.T) {
 		t.Fatal("stats localization mismatch")
 	}
 	cronLocation := (AdminRepository{}).adminCronLocation()
-	if cronLocation != time.Local {
-		t.Fatalf("unexpected server cron location: %v", cronLocation)
+	if cronLocation != time.UTC {
+		t.Fatalf("admin cron must use UTC, got: %v", cronLocation)
 	}
 	stored := nextAdminCronWeekday(time.Date(2026, time.July, 13, 0, 0, 0, 0, time.UTC).In(cronLocation), time.Monday, 1, 10).UTC()
-	if stored.Weekday() != time.Sunday || stored.Hour() != 22 || stored.Minute() != 10 {
+	if stored.Weekday() != time.Monday || stored.Hour() != 1 || stored.Minute() != 10 {
 		t.Fatalf("unexpected UTC cron slot: %v", stored)
 	}
 }

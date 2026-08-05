@@ -9,7 +9,6 @@ import (
 	"strings"
 	"syscall"
 	"time"
-	_ "time/tzdata"
 	"unicode"
 
 	appgame "github.com/hjyoon/ogame-opensource/backend/internal/application/game"
@@ -36,10 +35,7 @@ import (
 func main() {
 	cfg := config.Load()
 	logger := newLogger(cfg.LogLevel)
-	if err := setServerTimezone(cfg.Timezone); err != nil {
-		logger.Error("invalid server timezone", "timezone", cfg.Timezone, "error", err)
-		os.Exit(1)
-	}
+	setServerTimezone()
 	pools := openDatabasePools(cfg, logger)
 	defer pools.Close(logger)
 	queueWorkerContext, stopQueueWorker := context.WithCancel(context.Background())
@@ -59,7 +55,7 @@ func main() {
 	defer stop()
 	serverError := make(chan error, 1)
 	go func() {
-		logger.Info("starting ogame go server", "addr", cfg.Addr, "env", cfg.Environment, "timezone", cfg.Timezone)
+		logger.Info("starting ogame go server", "addr", cfg.Addr, "env", cfg.Environment, "timezone", "UTC")
 		serverError <- server.ListenAndServe()
 	}()
 
@@ -118,13 +114,8 @@ func startDueQueueWorker(ctx context.Context, cfg config.Config, logger *slog.Lo
 	return done
 }
 
-func setServerTimezone(name string) error {
-	location, err := time.LoadLocation(name)
-	if err != nil {
-		return err
-	}
-	time.Local = location
-	return nil
+func setServerTimezone() {
+	time.Local = time.UTC
 }
 
 func buildHandler(cfg config.Config, logger *slog.Logger, pools databasePools, queueWorker appsystem.QueueWorkerStatusProvider) http.Handler {

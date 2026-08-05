@@ -14,6 +14,7 @@ import (
 	"strconv"
 	"strings"
 	"testing"
+	"time"
 
 	appgame "github.com/hjyoon/ogame-opensource/backend/internal/application/game"
 	apppublicsite "github.com/hjyoon/ogame-opensource/backend/internal/application/publicsite"
@@ -992,9 +993,10 @@ func TestGameOverviewEndpointReturnsOverview(t *testing.T) {
 	overview := &fakeGameOverview{result: appgame.OverviewResult{
 		Authenticated: true,
 		Overview: domaingame.Overview{
-			Commander:  "legor",
-			Validated:  true,
-			ServerTime: "Fri Jun 19 18:23:07",
+			Commander:      "legor",
+			Validated:      true,
+			ServerTime:     "Fri Jun 19 15:23:07",
+			ServerTimeUnix: 1781882587,
 			Officers: domaingame.OverviewOfficers{
 				Commander:          true,
 				CommanderDaysLeft:  30,
@@ -1124,8 +1126,8 @@ func TestGameOverviewEndpointReturnsOverview(t *testing.T) {
 	if len(response.Overview.Messages) != 1 || response.Overview.Messages[0] != domaingame.OverviewAdminNotice {
 		t.Fatalf("expected overview messages, got %+v", response.Overview.Messages)
 	}
-	if response.Overview.ServerTime != "Fri Jun 19 18:23:07" {
-		t.Fatalf("expected overview server time, got %q", response.Overview.ServerTime)
+	if response.Overview.ServerTime != "Fri Jun 19 15:23:07" || response.Overview.ServerTimeUnix != 1781882587 {
+		t.Fatalf("expected overview UTC server time, got %q (%d)", response.Overview.ServerTime, response.Overview.ServerTimeUnix)
 	}
 	if response.Overview.UnreadMessages != 4 {
 		t.Fatalf("expected unread messages to be mapped, got %d", response.Overview.UnreadMessages)
@@ -4243,9 +4245,10 @@ func TestGameMessagesEndpointReturnsUnavailable(t *testing.T) {
 }
 
 func TestGameReportEndpointReturnsReport(t *testing.T) {
+	report := domaingame.NewReport(11, domaingame.MessageTypeSpyReport, "<table>spy</table>", true).WithDate(1700)
 	reportUseCase := &fakeGameReport{result: appgame.ReportResult{
 		Authenticated: true,
-		Report:        domaingame.NewReport(11, domaingame.MessageTypeSpyReport, "<table>spy</table>", true),
+		Report:        report,
 	}}
 	server := testServerWithGameReport(t, reportUseCase)
 	req := httptest.NewRequest(http.MethodGet, "/api/game/report?session=public&bericht=11", nil)
@@ -4261,7 +4264,7 @@ func TestGameReportEndpointReturnsReport(t *testing.T) {
 	if err := json.Unmarshal(rec.Body.Bytes(), &response); err != nil {
 		t.Fatal(err)
 	}
-	if !response.Authenticated || response.Report == nil || response.Report.Title != domaingame.ReportTitleSpy || response.Report.Text != "<table>spy</table>" {
+	if !response.Authenticated || response.Report == nil || response.Report.Title != domaingame.ReportTitleSpy || response.Report.Text != "<table>spy</table>" || response.Report.Date != 1700 {
 		t.Fatalf("unexpected report response: %+v", response)
 	}
 	if reportUseCase.command.PublicSession != "public" || reportUseCase.command.ReportID != 11 ||
@@ -4356,7 +4359,7 @@ func TestGameOptionsEndpointUpdatesOptionsFromJSON(t *testing.T) {
 	optionsUseCase := &fakeGameOptions{updateResult: appgame.OptionsResult{
 		Authenticated: true,
 		Options:       sampleGameOptions(),
-		ActionIssue:   domaingame.OptionsSavedIssue(),
+		ActionIssue:   domaingame.OptionsVacationEnabledIssue(time.Unix(1700, 0)),
 	}}
 	server := testServerWithGameOptions(t, optionsUseCase)
 	body := strings.NewReader(`{"name":"NewPilot","language":"fr","skinPath":"http://127.0.0.1:8890/evolution","useSkin":true,"deactivateIp":true,"sortBy":2,"sortOrder":1,"maxSpy":9,"maxFleetMessages":11,"oldPassword":"oldpass123","newPassword":"newpass123","newPasswordRepeat":"newpass123","email":"new@example.test","vacationMode":true,"deleteAccount":true,"showEspionageButton":true,"showWriteMessage":true,"showBuddy":true,"showRocketAttack":true,"showViewReport":true,"doNotUseFolders":true,"feedEnabled":true,"feedType":"atom","hideGoEmail":true}`)
@@ -4390,8 +4393,8 @@ func TestGameOptionsEndpointUpdatesOptionsFromJSON(t *testing.T) {
 	if err := json.Unmarshal(rec.Body.Bytes(), &response); err != nil {
 		t.Fatal(err)
 	}
-	if response.ActionIssue == nil || response.ActionIssue.Code != domaingame.OptionsIssueSaved {
-		t.Fatalf("expected saved action issue, got %+v", response)
+	if response.ActionIssue == nil || response.ActionIssue.Code != domaingame.OptionsIssueVacationEnabled || response.ActionIssue.Timestamp != 1700 {
+		t.Fatalf("expected timestamped action issue, got %+v", response)
 	}
 }
 

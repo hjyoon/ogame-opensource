@@ -264,12 +264,14 @@ func (r OverviewRepository) GetOverview(ctx context.Context, query appgame.Overv
 		}
 	}
 
+	now := r.currentTime()
 	return domaingame.Overview{
-		Commander:  user.Commander,
-		AdminLevel: user.AdminLevel,
-		Validated:  user.Validated,
-		ServerTime: formatLegacyOverviewTime(r.currentTime()),
-		Officers:   user.Officers,
+		Commander:      user.Commander,
+		AdminLevel:     user.AdminLevel,
+		Validated:      user.Validated,
+		ServerTime:     formatLegacyOverviewTime(now),
+		ServerTimeUnix: now.Unix(),
+		Officers:       user.Officers,
 		Score: domaingame.ScoreSummary{
 			RawScore:        user.Score,
 			Rank:            user.Rank,
@@ -277,7 +279,7 @@ func (r OverviewRepository) GetOverview(ctx context.Context, query appgame.Overv
 		},
 		CurrentPlanet:  current,
 		PlanetSwitcher: planets,
-		News:           overviewNews(universe, r.currentTime().Unix()),
+		News:           overviewNews(universe, now.Unix()),
 		MenuLinks: domaingame.OverviewMenuLinks{
 			BoardURL:   universe.BoardURL,
 			DiscordURL: universe.DiscordURL,
@@ -1758,7 +1760,7 @@ func overviewTechnologyName(techID int) string {
 }
 
 func formatLegacyOverviewTime(now time.Time) string {
-	return now.In(time.Local).Format("Mon Jan 2 15:04:05")
+	return now.UTC().Format("Mon Jan 2 15:04:05")
 }
 
 func scanPlanetOverview(rows Rows, user overviewUser) (domaingame.PlanetOverview, error) {

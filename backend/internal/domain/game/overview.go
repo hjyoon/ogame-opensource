@@ -23,6 +23,7 @@ type Overview struct {
 	AdminLevel     int
 	Validated      bool
 	ServerTime     string
+	ServerTimeUnix int64
 	Officers       OverviewOfficers
 	Score          ScoreSummary
 	CurrentPlanet  PlanetOverview

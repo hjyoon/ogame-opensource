@@ -341,6 +341,7 @@ type Report struct {
 	Type     int    `json:"type"`
 	Title    string `json:"title"`
 	Text     string `json:"text"`
+	Date     int64  `json:"date"`
 	Allowed  bool   `json:"allowed"`
 }
 

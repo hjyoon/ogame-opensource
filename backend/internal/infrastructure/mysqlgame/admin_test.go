@@ -658,7 +658,7 @@ func TestAdminRepositoryMutatesCoupons(t *testing.T) {
 			uni.execCalls[0].args[4] != 14 || uni.execCalls[0].args[7] != adminCouponQueuePriority {
 			t.Fatalf("unexpected coupon queue insert: %+v", uni.execCalls)
 		}
-		expectedEnd := int(now.Unix()) + int(time.Date(2026, time.December, 31, 23, 59, 0, 0, time.Local).Unix())
+		expectedEnd := int(now.Unix()) + int(time.Date(2026, time.December, 31, 23, 59, 0, 0, time.UTC).Unix())
 		if uni.execCalls[0].args[6] != expectedEnd {
 			t.Fatalf("unexpected queue end arg: %+v want %d", uni.execCalls[0].args[6], expectedEnd)
 		}
@@ -866,7 +866,7 @@ func TestAdminRepositoryCouponEdgeCases(t *testing.T) {
 
 		now := time.Date(2026, time.June, 26, 12, 0, 0, 0, time.UTC)
 		got := parseAdminCouponQueueEnd("0.99", "25:88", now)
-		want := int(time.Date(2034, time.March, 1, 2, 28, 0, 0, time.Local).Unix())
+		want := int(time.Date(2034, time.March, 1, 2, 28, 0, 0, time.UTC).Unix())
 		if got != want {
 			t.Fatalf("unexpected normalized queue end %d want %d", got, want)
 		}

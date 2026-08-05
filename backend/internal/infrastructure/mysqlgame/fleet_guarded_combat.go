@@ -6,7 +6,6 @@ import (
 	"fmt"
 	"math"
 	"strings"
-	"time"
 
 	domaingame "github.com/hjyoon/ogame-opensource/backend/internal/domain/game"
 )
@@ -278,7 +277,7 @@ func combatExpeditionBattleReport(result domaingame.CombatResult, at int64) stri
 
 func renderCombatBattleReport(result domaingame.CombatResult, details *combatBattleReportDetails, at int64) string {
 	var report strings.Builder
-	fmt.Fprintf(&report, "At %s the following fleets met in battle::<br>", time.Unix(at, 0).Format("01-02 15:04:05"))
+	fmt.Fprintf(&report, "At %s the following fleets met in battle::<br>", clientLocalTimeHTML(at, clientTimeFormatMessage))
 	report.WriteString("<table border=1 width=100%><tr>")
 	for _, slot := range result.Before.Attackers {
 		report.WriteString(combatBattleSlot(slot, true, true, domaingame.FleetIDs(), slot.Units))

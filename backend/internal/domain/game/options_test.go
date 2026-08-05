@@ -302,7 +302,7 @@ func TestOptionsActionIssues(t *testing.T) {
 	if issue := OptionsSavedIssue(); issue.Code != OptionsIssueSaved || issue.Message == "" {
 		t.Fatalf("unexpected saved issue: %+v", issue)
 	}
-	if issue := OptionsAccountDeletionQueuedIssue(testUnix(1_700_000_000)); issue.Code != OptionsIssueAccountDeletionQueued || !contains(issue.Message, "Deletion date:") {
+	if issue := OptionsAccountDeletionQueuedIssue(testUnix(1_700_000_000)); issue.Code != OptionsIssueAccountDeletionQueued || !contains(issue.Message, "Deletion date:") || issue.Timestamp != 1_700_000_000 {
 		t.Fatalf("unexpected queued issue: %+v", issue)
 	}
 	if issue := OptionsAccountDeletionQueuedIssue(testUnix(0)); issue.Code != OptionsIssueAccountDeletionQueued || contains(issue.Message, "1970") {
@@ -311,7 +311,7 @@ func TestOptionsActionIssues(t *testing.T) {
 	if issue := OptionsAccountDeletionClearedIssue(); issue.Code != OptionsIssueAccountDeletionClear || issue.Message == "" {
 		t.Fatalf("unexpected cleared issue: %+v", issue)
 	}
-	if issue := OptionsVacationEnabledIssue(testUnix(1_700_000_000)); issue.Code != OptionsIssueVacationEnabled || !contains(issue.Message, "Minimum until:") {
+	if issue := OptionsVacationEnabledIssue(testUnix(1_700_000_000)); issue.Code != OptionsIssueVacationEnabled || !contains(issue.Message, "Minimum until:") || issue.Timestamp != 1_700_000_000 {
 		t.Fatalf("unexpected vacation enabled issue: %+v", issue)
 	}
 	if issue := OptionsVacationDisabledIssue("Legor"); issue.Code != OptionsIssueVacationDisabled || !contains(issue.Message, "Legor") {
@@ -323,7 +323,7 @@ func TestOptionsActionIssues(t *testing.T) {
 	if issue := OptionsVacationBlockedIssue(); issue.Code != OptionsIssueVacationBlocked || issue.Message == "" {
 		t.Fatalf("unexpected vacation blocked issue: %+v", issue)
 	}
-	if issue := OptionsVacationLockedIssue(testUnix(1_700_000_000)); issue.Code != OptionsIssueVacationLocked || !contains(issue.Message, "Minimum until:") {
+	if issue := OptionsVacationLockedIssue(testUnix(1_700_000_000)); issue.Code != OptionsIssueVacationLocked || !contains(issue.Message, "Minimum until:") || issue.Timestamp != 1_700_000_000 {
 		t.Fatalf("unexpected vacation locked issue: %+v", issue)
 	}
 	if issue := OptionsPasswordChangedIssue(); issue.Code != OptionsIssuePasswordChanged || issue.Message == "" {

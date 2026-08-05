@@ -8,6 +8,7 @@ import (
 	"io"
 	"sync"
 	"testing"
+	"time"
 
 	"github.com/go-sql-driver/mysql"
 )
@@ -24,7 +25,7 @@ func TestDSN(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	if cfg.Addr != "db.example:3307" || cfg.User != "root" || cfg.Passwd != "secret" || cfg.DBName != "master" {
+	if cfg.Addr != "db.example:3307" || cfg.User != "root" || cfg.Passwd != "secret" || cfg.DBName != "master" || cfg.Loc != time.UTC || cfg.Params["time_zone"] != "'+00:00'" {
 		t.Fatalf("unexpected DSN config: %+v", cfg)
 	}
 }

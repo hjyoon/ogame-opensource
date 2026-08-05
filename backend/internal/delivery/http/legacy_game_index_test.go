@@ -573,8 +573,8 @@ func TestLegacyGameIndexBotEditErrorsAndHelpers(t *testing.T) {
 	original := time.Local
 	time.Local = time.FixedZone("test", -5*60*60)
 	t.Cleanup(func() { time.Local = original })
-	if got := legacyAdminDateTime(0); got != "1969-12-31 19:00:00" {
-		t.Fatalf("legacy admin date did not use server timezone: %s", got)
+	if got := legacyAdminDateTime(0); got != "1970-01-01 00:00:00" {
+		t.Fatalf("legacy admin date was not normalized to UTC: %s", got)
 	}
 	preview := legacyBotEditPreviewHTML(`a"b`, appgame.AdminBotEditMutationResult{SelectedStrategyID: 9, Source: "<source>"})
 	if !strings.Contains(preview, "<title>9</title>") || !strings.Contains(preview, "&lt;source&gt;") || !strings.Contains(preview, `var session="a&#34;b"`) {

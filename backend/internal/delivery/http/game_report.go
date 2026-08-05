@@ -20,6 +20,7 @@ type gameReportSummary struct {
 	Type    int    `json:"type"`
 	Title   string `json:"title"`
 	Text    string `json:"text"`
+	Date    int64  `json:"date"`
 	Allowed bool   `json:"allowed"`
 }
 
@@ -80,6 +81,7 @@ func toGameReportSummary(report domaingame.Report) gameReportSummary {
 		Type:    report.Type,
 		Title:   report.Title,
 		Text:    report.Text,
+		Date:    report.Date,
 		Allowed: report.Allowed,
 	}
 }

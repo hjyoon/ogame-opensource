@@ -158,8 +158,9 @@ type NormalizedOptionsMutation struct {
 }
 
 type OptionsActionIssue struct {
-	Code    string
-	Message string
+	Code      string
+	Message   string
+	Timestamp int64
 }
 
 func NewOptions(overview Overview, user OptionsUser, universe OptionsUniverse, settings OptionsSettings, account OptionsAccount, rawFlags int64) Options {
@@ -371,10 +372,12 @@ func OptionsSavedIssue() *OptionsActionIssue {
 
 func OptionsAccountDeletionQueuedIssue(until time.Time) *OptionsActionIssue {
 	message := "Your account was set for deletion."
+	var timestamp int64
 	if !until.IsZero() {
-		message += " Deletion date: " + until.Format("2006-01-02 15:04:05")
+		message += " Deletion date: " + until.UTC().Format("2006-01-02 15:04:05")
+		timestamp = until.Unix()
 	}
-	return &OptionsActionIssue{Code: OptionsIssueAccountDeletionQueued, Message: message}
+	return &OptionsActionIssue{Code: OptionsIssueAccountDeletionQueued, Message: message, Timestamp: timestamp}
 }
 
 func OptionsAccountDeletionClearedIssue() *OptionsActionIssue {
@@ -383,10 +386,12 @@ func OptionsAccountDeletionClearedIssue() *OptionsActionIssue {
 
 func OptionsVacationEnabledIssue(until time.Time) *OptionsActionIssue {
 	message := "Vacation mode enabled."
+	var timestamp int64
 	if !until.IsZero() {
-		message += " Minimum until: " + until.Format("2006-01-02 15:04:05")
+		message += " Minimum until: " + until.UTC().Format("2006-01-02 15:04:05")
+		timestamp = until.Unix()
 	}
-	return &OptionsActionIssue{Code: OptionsIssueVacationEnabled, Message: message}
+	return &OptionsActionIssue{Code: OptionsIssueVacationEnabled, Message: message, Timestamp: timestamp}
 }
 
 func OptionsVacationDisabledIssue(name string) *OptionsActionIssue {
@@ -403,10 +408,12 @@ func OptionsVacationBlockedIssue() *OptionsActionIssue {
 
 func OptionsVacationLockedIssue(until time.Time) *OptionsActionIssue {
 	message := "Vacation mode cannot be disabled yet."
+	var timestamp int64
 	if !until.IsZero() {
-		message += " Minimum until: " + until.Format("2006-01-02 15:04:05")
+		message += " Minimum until: " + until.UTC().Format("2006-01-02 15:04:05")
+		timestamp = until.Unix()
 	}
-	return &OptionsActionIssue{Code: OptionsIssueVacationLocked, Message: message}
+	return &OptionsActionIssue{Code: OptionsIssueVacationLocked, Message: message, Timestamp: timestamp}
 }
 
 func OptionsPasswordChangedIssue() *OptionsActionIssue {

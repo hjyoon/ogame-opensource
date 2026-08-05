@@ -32,6 +32,7 @@ type gameOverviewSummary struct {
 	AdminLevel     int                         `json:"adminLevel"`
 	Validated      bool                        `json:"validated"`
 	ServerTime     string                      `json:"serverTime"`
+	ServerTimeUnix int64                       `json:"serverTimeUnix"`
 	Officers       gameOverviewOfficers        `json:"officers"`
 	Score          gameScoreResponse           `json:"score"`
 	CurrentPlanet  gamePlanetOverviewResponse  `json:"currentPlanet"`
@@ -299,10 +300,11 @@ func toGameOverviewSummary(overview domaingame.Overview) gameOverviewSummary {
 		events = append(events, toGameFleetMissionResponse(event))
 	}
 	return gameOverviewSummary{
-		Commander:  overview.Commander,
-		AdminLevel: overview.AdminLevel,
-		Validated:  overview.Validated,
-		ServerTime: overview.ServerTime,
+		Commander:      overview.Commander,
+		AdminLevel:     overview.AdminLevel,
+		Validated:      overview.Validated,
+		ServerTime:     overview.ServerTime,
+		ServerTimeUnix: overview.ServerTimeUnix,
 		Officers: gameOverviewOfficers{
 			Commander:          overview.Officers.Commander,
 			CommanderDaysLeft:  overview.Officers.CommanderDaysLeft,

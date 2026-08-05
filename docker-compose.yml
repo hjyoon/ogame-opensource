@@ -6,8 +6,7 @@ x-go-build: &go-build
 x-go-environment: &go-environment
   OGAME_ENV: ${OGAME_ENV:-development}
   OGAME_LOG_LEVEL: ${OGAME_LOG_LEVEL:-info}
-  OGAME_TIMEZONE: ${OGAME_TIMEZONE:-Europe/Moscow}
-  TZ: ${OGAME_TIMEZONE:-Europe/Moscow}
+  TZ: UTC
   OGAME_HTTP_ADDR: :8080
   OGAME_LEGACY_BASE_URL: ${OGAME_LEGACY_BASE_URL:-http://localhost:8888}
   OGAME_LEGACY_GAME_DIR: /srv/ogame/game
@@ -61,8 +60,7 @@ services:
       target: legacy
     environment:
       OGAME_AUTO_INSTALL: ${OGAME_AUTO_INSTALL:-1}
-      OGAME_TIMEZONE: ${OGAME_TIMEZONE:-Europe/Moscow}
-      TZ: ${OGAME_TIMEZONE:-Europe/Moscow}
+      TZ: UTC
       OGAME_MDB_HOST: ${OGAME_MDB_HOST:-mysql}
       OGAME_MDB_USER: ${OGAME_MDB_USER:-root}
       OGAME_MDB_PASS: ${OGAME_MDB_PASS:-${MYSQL_ROOT_PASSWORD:-123}}
@@ -169,10 +167,11 @@ services:
 
   mysql:
     image: mysql:8.0
-    command: [--skip-log-bin]
+    command: [--skip-log-bin, --default-time-zone=+00:00]
     environment:
       MYSQL_ROOT_PASSWORD: ${MYSQL_ROOT_PASSWORD:-123}
       MYSQL_DATABASE: ${OGAME_MDB_NAME:-master}
+      TZ: UTC
     ports:
       - "${OGAME_MYSQL_PORT:-3306}:3306"
     volumes:
@@ -196,6 +195,7 @@ services:
       PMA_PORT: 3306
       PMA_ARBITRARY: 1
       UPLOAD_LIMIT: 100M
+      TZ: UTC
     ports:
       - "${OGAME_PHPMYADMIN_PORT:-8080}:80"
     depends_on:

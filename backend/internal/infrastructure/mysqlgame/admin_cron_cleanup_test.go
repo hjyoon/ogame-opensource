@@ -27,7 +27,7 @@ func TestAdminCronCleanPlanetsRemovesAndReschedules(t *testing.T) {
 	if !strings.Contains(runner.execCalls[3].sql, "DELETE FROM `ogame_planets`") || runner.execCalls[3].args[0] != 77 {
 		t.Fatalf("planet was not deleted: %+v", runner.execCalls[3])
 	}
-	if got := runner.execCalls[5].args[3]; got != int(nextAdminCronDaily(now.In(time.Local), 1, 10).Unix()) {
+	if got := runner.execCalls[5].args[3]; got != int(nextAdminCronDaily(now.UTC(), 1, 10).Unix()) {
 		t.Fatalf("unexpected next cleanup time: %v", got)
 	}
 	if got := runner.execCalls[6].args[1]; got != "Aufräumen zerstörter Planeten (1)" {
@@ -50,7 +50,7 @@ func TestAdminCronCleanPlayersEmptyBatch(t *testing.T) {
 	if len(runner.execCalls) != 2 || runner.execCalls[1].args[1] != adminQueueTypeCleanPlayers {
 		t.Fatalf("unexpected writes: %+v", runner.execCalls)
 	}
-	if got := runner.execCalls[1].args[3]; got != int(nextAdminCronDaily(now.In(time.Local), 1, 10).Unix()) {
+	if got := runner.execCalls[1].args[3]; got != int(nextAdminCronDaily(now.UTC(), 1, 10).Unix()) {
 		t.Fatalf("unexpected next player cleanup time: %v", got)
 	}
 }
