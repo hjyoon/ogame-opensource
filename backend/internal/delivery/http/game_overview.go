@@ -83,15 +83,22 @@ type gameCoordinatesResponse struct {
 }
 
 type gameResourcesResponse struct {
-	Metal             float64 `json:"metal"`
-	Crystal           float64 `json:"crystal"`
-	Deuterium         float64 `json:"deuterium"`
-	DarkMatter        int     `json:"darkMatter"`
-	Energy            int     `json:"energy"`
-	EnergyCapacity    int     `json:"energyCapacity"`
-	MetalCapacity     int     `json:"metalCapacity"`
-	CrystalCapacity   int     `json:"crystalCapacity"`
-	DeuteriumCapacity int     `json:"deuteriumCapacity"`
+	Metal             float64                  `json:"metal"`
+	Crystal           float64                  `json:"crystal"`
+	Deuterium         float64                  `json:"deuterium"`
+	ProductionPerHour gameResourceRateResponse `json:"productionPerHour"`
+	DarkMatter        int                      `json:"darkMatter"`
+	Energy            int                      `json:"energy"`
+	EnergyCapacity    int                      `json:"energyCapacity"`
+	MetalCapacity     int                      `json:"metalCapacity"`
+	CrystalCapacity   int                      `json:"crystalCapacity"`
+	DeuteriumCapacity int                      `json:"deuteriumCapacity"`
+}
+
+type gameResourceRateResponse struct {
+	Metal     float64 `json:"metal"`
+	Crystal   float64 `json:"crystal"`
+	Deuterium float64 `json:"deuterium"`
 }
 
 type gamePlanetOverviewResponse struct {
@@ -359,9 +366,14 @@ func toGamePlanetOverviewResponse(planet domaingame.PlanetOverview) gamePlanetOv
 		Fields:      planet.Fields,
 		MaxFields:   planet.MaxFields,
 		Resources: gameResourcesResponse{
-			Metal:             planet.Resources.Metal,
-			Crystal:           planet.Resources.Crystal,
-			Deuterium:         planet.Resources.Deuterium,
+			Metal:     planet.Resources.Metal,
+			Crystal:   planet.Resources.Crystal,
+			Deuterium: planet.Resources.Deuterium,
+			ProductionPerHour: gameResourceRateResponse{
+				Metal:     planet.Resources.ProductionPerHour.Metal,
+				Crystal:   planet.Resources.ProductionPerHour.Crystal,
+				Deuterium: planet.Resources.ProductionPerHour.Deuterium,
+			},
 			DarkMatter:        planet.Resources.DarkMatter,
 			Energy:            planet.Resources.Energy,
 			EnergyCapacity:    planet.Resources.EnergyCapacity,

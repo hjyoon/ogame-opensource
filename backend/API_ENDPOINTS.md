@@ -48,7 +48,7 @@ Tools and scopes: [MCP.md](../MCP.md).
 
 | Method | Path | Purpose |
 | --- | --- | --- |
-| `GET/POST` | `/api/game/overview` | Overview, rename, planet delete |
+| `GET/POST` | `/api/game/overview` | Overview snapshot/rates, rename, planet delete |
 | `GET/POST` | `/api/game/buildings` | Building queue and mutations |
 | `GET` | `/api/game/empire` | Empire view; legacy `modus` shortcuts |
 | `GET/POST` | `/api/game/resources` | Production settings |

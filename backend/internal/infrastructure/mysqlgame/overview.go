@@ -1126,10 +1126,14 @@ func overviewErrors(user overviewUser, universe overviewUniverse) []string {
 }
 
 func (r OverviewRepository) loadPlanet(ctx context.Context, planetsTable string, playerID int, planetID int, user overviewUser) (domaingame.PlanetOverview, error) {
+	uniTable, err := tableName(r.prefix, "uni")
+	if err != nil {
+		return domaingame.PlanetOverview{}, err
+	}
 	rows, err := r.queryer.QueryContext(
 		ctx,
 		fmt.Sprintf(
-			"SELECT planet_id, name, type, g, s, p, diameter, temp, fields, maxfields, `%d`, `%d`, `%d`, `%d`, `%d`, `%d`, `%d`, `%d`, `%d`, `%d`, `%d`, `%d`, prod%d, prod%d, prod%d, prod%d, prod%d, prod%d FROM %s WHERE planet_id = ? AND owner_id = ? AND type < ? LIMIT 1",
+			"SELECT planet_id, name, type, g, s, p, diameter, temp, fields, maxfields, `%d`, `%d`, `%d`, `%d`, `%d`, `%d`, `%d`, `%d`, `%d`, `%d`, `%d`, `%d`, prod%d, prod%d, prod%d, prod%d, prod%d, prod%d, COALESCE((SELECT speed FROM %s LIMIT 1), 1) FROM %s WHERE planet_id = ? AND owner_id = ? AND type < ? LIMIT 1",
 			resourceMetal,
 			resourceCrystal,
 			resourceDeuterium,
@@ -1148,6 +1152,7 @@ func (r OverviewRepository) loadPlanet(ctx context.Context, planetsTable string,
 			domaingame.BuildingSolarPlant,
 			domaingame.BuildingFusionReactor,
 			domaingame.FleetSolarSatellite,
+			uniTable,
 			planetsTable,
 		),
 		planetID,
@@ -1780,6 +1785,7 @@ func scanPlanetOverview(rows Rows, user overviewUser) (domaingame.PlanetOverview
 	var prodSolar float64
 	var prodFusion float64
 	var prodSatellite float64
+	universeSpeed := 1.0
 	dest := []any{
 		&planet.ID,
 		&planet.Name,
@@ -1809,13 +1815,19 @@ func scanPlanetOverview(rows Rows, user overviewUser) (domaingame.PlanetOverview
 		&prodSolar,
 		&prodFusion,
 		&prodSatellite,
+		&universeSpeed,
 	}
 	if err := rows.Scan(dest...); err != nil {
 		if !scanDestinationCountError(err) {
 			return planet, err
 		}
-		if err := rows.Scan(dest[:16]...); err != nil {
-			return planet, err
+		if err := rows.Scan(dest[:len(dest)-1]...); err != nil {
+			if !scanDestinationCountError(err) {
+				return planet, err
+			}
+			if err := rows.Scan(dest[:16]...); err != nil {
+				return planet, err
+			}
 		}
 	}
 	planet.Resources.DarkMatter = user.DarkMatter
@@ -1847,11 +1859,13 @@ func scanPlanetOverview(rows Rows, user overviewUser) (domaingame.PlanetOverview
 				domaingame.FleetSolarSatellite:    prodSatellite,
 			},
 			EnergyResearch: user.EnergyResearch,
-			UniverseSpeed:  1,
+			UniverseSpeed:  universeSpeed,
+			Geologist:      user.Officers.Geologist,
 			Engineer:       user.Engineer,
 		})
 		planet.Resources.Energy = int(production.Totals.Hour.Energy)
 		planet.Resources.EnergyCapacity = overviewEnergyCapacity(production)
+		planet.Resources.ProductionPerHour = production.Totals.Hour
 	}
 	return planet, nil
 }

@@ -1,4 +1,4 @@
-import { chromium, firefox, type Page } from "@playwright/test";
+import { chromium, firefox, type Page, type Request } from "@playwright/test";
 import { existsSync } from "node:fs";
 import { mkdir, writeFile } from "node:fs/promises";
 import { join, resolve } from "node:path";
@@ -93,7 +93,7 @@ try {
       details: state.details
     };
   });
-  await assertGameOverviewBackgroundRefresh(page);
+  await assertGameOverviewDoesNotPoll(page);
   await assertRenamePlanetFlow(page);
   await assertGameClientNavigation(page, "game buildings menu preserves CSR", "a[href^='/game/buildings']", "/game/buildings", "Buildings");
   await assertGameClientNavigation(page, "game resources menu preserves CSR", "a[href^='/game/resources']", "/game/resources", "Resources");
@@ -263,17 +263,22 @@ async function createLoginFixture(): Promise<LoginFixture> {
   return { login, password, universe };
 }
 
-async function assertGameOverviewBackgroundRefresh(page: Page) {
-  await record("authenticated game shell refreshes overview in the background", async () => {
-    const response = await page.waitForResponse(
-      (candidate) => candidate.request().method() === "GET" && new URL(candidate.url()).pathname === "/api/game/overview",
-      { timeout: 5_000 }
-    );
+async function assertGameOverviewDoesNotPoll(page: Page) {
+  await record("authenticated game shell does not poll overview while idle", async () => {
+    let requestCount = 0;
+    const countOverviewRequest = (request: Request) => {
+      if (request.method() === "GET" && new URL(request.url()).pathname === "/api/game/overview") {
+        requestCount += 1;
+      }
+    };
+    page.on("request", countOverviewRequest);
+    await page.waitForTimeout(2_500);
+    page.off("request", countOverviewRequest);
     const state = await gameShellState(page, "login-form-submit", "Overview");
     return {
-      pass: response.ok() && state.pass,
+      pass: requestCount === 0 && state.pass,
       details: {
-        status: response.status(),
+        overviewRequests: requestCount,
         pathname: state.details.pathname,
         activeMenuLabel: state.details.activeMenuLabel
       }

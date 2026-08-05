@@ -20,7 +20,7 @@ func TestOverviewRepositoryReadsLegacyOverview(t *testing.T) {
 	useDefaultServerTimezone(t)
 	queryer := &fakeQueryer{results: []fakeQueryResult{
 		{rows: fakeRowsFromValues([]any{"legor", int64(123456), 7, 99, 1, 0, 0, 0, 0, 30, 7, 3, 6, int64(0), int64(0), int64(2000000000), int64(0), int64(2000000000)})},
-		{rows: fakeRowsFromValues([]any{99, "Arakis", 1, 1, 2, 3, 12800, 19, 12, 163, 1234.5, 234.5, 12.0, 0, 1, 2, 1, 1, 0, 3, 0, 2, 1.0, 1.0, 1.0, 1.0, 1.0, 1.0})},
+		{rows: fakeRowsFromValues([]any{99, "Arakis", 1, 1, 2, 3, 12800, 19, 12, 163, 1234.5, 234.5, 12.0, 0, 1, 2, 1, 1, 0, 3, 0, 2, 1.0, 1.0, 1.0, 1.0, 1.0, 1.0, 2.0})},
 		{rows: fakeRowsFromValues(
 			[]any{99, "Arakis", 1, 1, 2, 3},
 			[]any{100, "Colony", 1, 1, 2, 4},
@@ -61,6 +61,11 @@ func TestOverviewRepositoryReadsLegacyOverview(t *testing.T) {
 	}
 	if overview.CurrentPlanet.Resources.Metal != 1234.5 || overview.CurrentPlanet.Resources.Crystal != 234.5 || overview.CurrentPlanet.Resources.Deuterium != 12 {
 		t.Fatalf("unexpected resources: %+v", overview.CurrentPlanet.Resources)
+	}
+	if overview.CurrentPlanet.Resources.ProductionPerHour.Metal != 106 ||
+		overview.CurrentPlanet.Resources.ProductionPerHour.Crystal != 64 ||
+		overview.CurrentPlanet.Resources.ProductionPerHour.Deuterium != 0 {
+		t.Fatalf("unexpected hourly production: %+v", overview.CurrentPlanet.Resources.ProductionPerHour)
 	}
 	if overview.CurrentPlanet.Resources.DarkMatter != 37 ||
 		overview.CurrentPlanet.Resources.Energy != 140 ||

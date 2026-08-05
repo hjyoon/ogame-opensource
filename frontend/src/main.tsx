@@ -157,8 +157,6 @@ type GameMCPTokenRevokeStatus = {
 type GameOverview = NonNullable<GameOverviewStatus["overview"]>;
 type GameOverviewPlanetState = Pick<GameOverview, "currentPlanet" | "planetSwitcher">;
 
-const gameOverviewRefreshIntervalMs = 2_000;
-
 function legacyRegistrationIssueFromCode(errorCode: number): RegistrationIssue {
   const fieldByCode: Record<number, string> = {
     101: "character",
@@ -422,8 +420,6 @@ function App() {
   const [gameLogout, setGameLogout] = useState<GameLogoutStatus | null>(null);
   const [gameLogoutError, setGameLogoutError] = useState<string | null>(null);
   const gameOverviewRequestRef = useRef<AbortController | null>(null);
-  const gameOverviewBackgroundPendingRef = useRef(false);
-  const lastGameOverviewRefreshAtRef = useRef(0);
   const lastGameBuildingRouteMutationRef = useRef("");
   const resolution = resolvePublicRoute(pathname);
   const route = resolution.route;
@@ -553,17 +549,13 @@ function App() {
     return () => window.removeEventListener("popstate", onPopState);
   }, []);
 
-  const loadGameOverview = (showPending = false, background = false) => {
+  const loadGameOverview = (showPending = false) => {
     const publicSession = new URLSearchParams(search).get("session") ?? "";
     if (!pathname.startsWith("/game") || gameRoute?.key === "logout" || gameRoute?.key === "report" || publicSession === "") {
       gameOverviewRequestRef.current?.abort();
       gameOverviewRequestRef.current = null;
-      gameOverviewBackgroundPendingRef.current = false;
       setGameOverview(null);
       setGameOverviewError(null);
-      return;
-    }
-    if (background && (gameOverviewBackgroundPendingRef.current || gameOverviewRequestRef.current !== null)) {
       return;
     }
     const currentSearch = new URLSearchParams(search);
@@ -581,8 +573,6 @@ function App() {
     gameOverviewRequestRef.current?.abort();
     const controller = new AbortController();
     gameOverviewRequestRef.current = controller;
-    gameOverviewBackgroundPendingRef.current = background;
-    lastGameOverviewRefreshAtRef.current = Date.now();
     fetch(`/api/game/overview?${overviewSearch.toString()}`, {
       credentials: "same-origin",
       signal: controller.signal
@@ -590,24 +580,17 @@ function App() {
       .then((response) => readAPIJSON<GameOverviewStatus>(response, "overview", [401]))
       .then((payload) => {
         setGameOverview(payload);
-        if (!background) {
-          setGameOverviewError(null);
-        }
+        setGameOverviewError(null);
       })
       .catch((err: unknown) => {
         if (err instanceof DOMException && err.name === "AbortError") {
           return;
         }
-        if (!background) {
-          setGameOverviewError(err instanceof Error ? err.message : String(err));
-        }
+        setGameOverviewError(err instanceof Error ? err.message : String(err));
       })
       .finally(() => {
         if (gameOverviewRequestRef.current === controller) {
           gameOverviewRequestRef.current = null;
-        }
-        if (background) {
-          gameOverviewBackgroundPendingRef.current = false;
         }
         if (showPending) {
           setGameOverviewPending(false);
@@ -617,38 +600,6 @@ function App() {
 
   useEffect(() => {
     loadGameOverview();
-  }, [gameRoute?.key, pathname, search]);
-
-  useEffect(() => {
-    const publicSession = new URLSearchParams(search).get("session") ?? "";
-    if (
-      !pathname.startsWith("/game") ||
-      gameRoute?.key === "logout" ||
-      gameRoute?.key === "report" ||
-      gameRoute?.key === "resources" ||
-      publicSession === ""
-    ) {
-      return;
-    }
-    const refreshIfDue = () => {
-      if (document.visibilityState !== "visible") {
-        return;
-      }
-      const now = Date.now();
-      const lastRefresh = lastGameOverviewRefreshAtRef.current;
-      if (now <= lastRefresh || now - lastRefresh < gameOverviewRefreshIntervalMs) {
-        return;
-      }
-      loadGameOverview(false, true);
-    };
-    const interval = window.setInterval(refreshIfDue, 1_000);
-    document.addEventListener("visibilitychange", refreshIfDue);
-    window.addEventListener("focus", refreshIfDue);
-    return () => {
-      window.clearInterval(interval);
-      document.removeEventListener("visibilitychange", refreshIfDue);
-      window.removeEventListener("focus", refreshIfDue);
-    };
   }, [gameRoute?.key, pathname, search]);
 
   useEffect(() => {

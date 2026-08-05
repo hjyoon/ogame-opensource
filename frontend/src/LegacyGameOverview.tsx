@@ -19,6 +19,7 @@ import {
 import { legacyChangelogRows } from "./legacyChangelogData";
 import { browserTimeZone, localTimeParts } from "./localTime";
 import { MCPGuidePage } from "./MCPGuidePage";
+import { projectStoredResources, type ResourceProductionPerHour } from "./resourceProjection";
 
 export type GameOverviewStatus = {
   authenticated: boolean;
@@ -676,6 +677,7 @@ type Resources = {
   metal: number;
   crystal: number;
   deuterium: number;
+  productionPerHour?: ResourceProductionPerHour;
   darkMatter: number;
   energy: number;
   energyCapacity: number;
@@ -3055,12 +3057,13 @@ function isSearchPageErrorMessage(message: string): boolean {
 
 function LegacyResourceHeader({ overview }: { overview: GameOverview }) {
   const planet = overview.currentPlanet;
+  const projectedResources = useProjectedStoredResources(planet.resources);
   const resources = [
-    { name: "Metal", value: planet.resources.metal, capacity: planet.resources.metalCapacity, img: `${skinBase}/images/metall.gif` },
-    { name: "Crystal", value: planet.resources.crystal, capacity: planet.resources.crystalCapacity, img: `${skinBase}/images/kristall.gif` },
+    { name: "Metal", value: projectedResources.metal, capacity: planet.resources.metalCapacity, img: `${skinBase}/images/metall.gif` },
+    { name: "Crystal", value: projectedResources.crystal, capacity: planet.resources.crystalCapacity, img: `${skinBase}/images/kristall.gif` },
     {
       name: "Deuterium",
-      value: planet.resources.deuterium,
+      value: projectedResources.deuterium,
       capacity: planet.resources.deuteriumCapacity,
       img: `${skinBase}/images/deuterium.gif`
     },
@@ -3212,6 +3215,24 @@ function LegacyResourceHeader({ overview }: { overview: GameOverview }) {
       </tbody>
     </table>
   );
+}
+
+function useProjectedStoredResources(resources: Resources) {
+  const baselineRef = React.useRef({ resources, receivedAt: Date.now() });
+  if (baselineRef.current.resources !== resources) {
+    baselineRef.current = { resources, receivedAt: Date.now() };
+  }
+  const [now, setNow] = React.useState(() => Date.now());
+  React.useEffect(() => {
+    const update = () => setNow(Date.now());
+    const interval = window.setInterval(update, 1000);
+    document.addEventListener("visibilitychange", update);
+    return () => {
+      window.clearInterval(interval);
+      document.removeEventListener("visibilitychange", update);
+    };
+  }, []);
+  return projectStoredResources(resources, now - baselineRef.current.receivedAt);
 }
 
 function showLegacyOfficerTooltip(
@@ -9992,17 +10013,30 @@ type ShipyardQueueRuntimeEntry = GameShipyardQueueEntry & {
   unitSeconds: number;
 };
 
-function ShipyardQueuePanel({ onComplete: _onComplete, queue }: { onComplete: () => void; queue: GameShipyardQueueEntry[] }) {
+function ShipyardQueuePanel({ onComplete, queue }: { onComplete: () => void; queue: GameShipyardQueueEntry[] }) {
   const queueKey = queue.map((entry) => `${entry.taskId}:${entry.end}:${entry.count}`).join("|");
   const [runtime, setRuntime] = React.useState<ShipyardQueueRuntime>(() => createShipyardQueueRuntime(queue));
+  const [refreshQueued, setRefreshQueued] = React.useState(false);
   React.useEffect(() => {
     setRuntime(createShipyardQueueRuntime(queue));
+    setRefreshQueued(false);
   }, [queueKey]);
   React.useEffect(() => {
     const id = window.setInterval(() => setRuntime((current) => advanceShipyardQueueRuntime(current, Date.now())), 200);
     return () => window.clearInterval(id);
   }, []);
   const active = runtime.entries[runtime.activeIndex];
+  const queueComplete = runtime.activeIndex >= runtime.entries.length;
+  React.useEffect(() => {
+    if (queue.length === 0 || runtime.entries.length === 0 || !queueComplete || refreshQueued) {
+      return undefined;
+    }
+    const id = window.setTimeout(() => {
+      setRefreshQueued(true);
+      onComplete();
+    }, 1000);
+    return () => window.clearTimeout(id);
+  }, [onComplete, queue.length, queueComplete, refreshQueued, runtime.entries.length]);
   if (queue.length === 0 || runtime.entries.length === 0) {
     return null;
   }
@@ -10013,7 +10047,6 @@ function ShipyardQueuePanel({ onComplete: _onComplete, queue }: { onComplete: ()
     }
     return sum + Math.max(0, entry.count) * unitSeconds;
   }, 0);
-  const queueComplete = runtime.activeIndex >= runtime.entries.length;
   return (
     <center className="legacy-shipyard-queue-panel">
       <br />

@@ -1038,6 +1038,7 @@ func TestGameOverviewEndpointReturnsOverview(t *testing.T) {
 					Metal:             1234.5,
 					Crystal:           234.5,
 					Deuterium:         12,
+					ProductionPerHour: domaingame.ResourceProductionValues{Metal: 321, Crystal: 123, Deuterium: 45},
 					DarkMatter:        37,
 					Energy:            140,
 					EnergyCapacity:    162,
@@ -1094,6 +1095,9 @@ func TestGameOverviewEndpointReturnsOverview(t *testing.T) {
 	if response.Overview.Score.Points != 123 ||
 		response.Overview.CurrentPlanet.Coordinates.Position != 3 ||
 		response.Overview.CurrentPlanet.Resources.Metal != 1234.5 ||
+		response.Overview.CurrentPlanet.Resources.ProductionPerHour.Metal != 321 ||
+		response.Overview.CurrentPlanet.Resources.ProductionPerHour.Crystal != 123 ||
+		response.Overview.CurrentPlanet.Resources.ProductionPerHour.Deuterium != 45 ||
 		response.Overview.CurrentPlanet.Resources.DarkMatter != 37 ||
 		response.Overview.CurrentPlanet.Resources.Energy != 140 ||
 		response.Overview.CurrentPlanet.Resources.EnergyCapacity != 162 ||

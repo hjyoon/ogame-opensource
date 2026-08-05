@@ -3822,11 +3822,6 @@ export const gameDynamicBehaviorSpecs: GameDynamicBehaviorSpec[] = [
     legacyReady: "#content form#ressourcen",
     migratedReady: ".legacy-resources-form",
     actions: [
-      {
-        type: "evaluate",
-        expression:
-          "document.body.dataset.ogameInitialMetal = document.querySelector('#resources tr:nth-child(3) td:first-child font')?.textContent?.trim() ?? ''"
-      },
       { type: "select", selector: "select[name='last1']", value: "0" },
       { type: "select", selector: "select[name='last2']", value: "50" },
       { type: "wait", waitMs: 3500 }
@@ -3845,22 +3840,16 @@ export const gameDynamicBehaviorSpecs: GameDynamicBehaviorSpec[] = [
         selector: "select[name='last2']",
         compareSides: true,
         expected: "50"
-      },
-      {
-        name: "resource-header-remains-static",
-        type: "evaluate",
-        expression:
-          "document.body.dataset.ogameInitialMetal === (document.querySelector('#resources tr:nth-child(3) td:first-child font')?.textContent?.trim() ?? '')",
-        expected: "true"
       }
     ],
     visual: {
       enabled: true,
       normalizePageName: "game-resources",
+      maskSelectors: ["#resources tr:nth-child(3)"],
       maxDiffRatio: 0,
       colorDeltaThreshold: 0
     },
-    notes: ["Covers unsaved production percentages and the static legacy resource header across the migrated overview polling interval."]
+    notes: ["Covers unsaved production percentages while the migrated resource header advances from its server snapshot without polling."]
   },
   {
     name: "resources-production-recalculate-submit",

@@ -111,6 +111,7 @@ type Resources struct {
 	Metal             float64
 	Crystal           float64
 	Deuterium         float64
+	ProductionPerHour ResourceProductionValues
 	DarkMatter        int
 	Energy            int
 	EnergyCapacity    int
