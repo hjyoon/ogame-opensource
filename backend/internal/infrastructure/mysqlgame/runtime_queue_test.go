@@ -32,6 +32,31 @@ func TestRuntimeQueueSettlerAllowsEmptyConfiguration(t *testing.T) {
 	}
 }
 
+func TestRuntimeQueueSettlerStopsCurrentTickWhenMutationLockIsBusy(t *testing.T) {
+	calls := 0
+	settler := RuntimeQueueSettler{finishers: []func(context.Context, int) error{
+		func(ctx context.Context, _ int) error {
+			calls++
+			if _, ok := ctx.Value(queueCompletionLockPolicyKey{}).(queueCompletionLockPolicy); !ok {
+				t.Fatal("runtime queue policy was not attached to the worker context")
+			}
+			return ErrQueueSettlementBusy
+		},
+		func(context.Context, int) error {
+			calls++
+			return nil
+		},
+	}}
+
+	err := settler.FinishDueQueues(context.Background(), 1234)
+	if !errors.Is(err, ErrQueueSettlementBusy) {
+		t.Fatalf("expected busy queue result, got %v", err)
+	}
+	if calls != 1 {
+		t.Fatalf("busy worker tick should defer remaining families, got %d calls", calls)
+	}
+}
+
 func TestNewRuntimeQueueSettlerRegistersAllQueueFamilies(t *testing.T) {
 	settler := NewRuntimeQueueSettler(nil, "uni1_")
 	if len(settler.finishers) != 6 {

@@ -49,6 +49,10 @@ func (r DefenseRepository) MutateDefense(ctx context.Context, query appgame.Defe
 }
 
 func (r ShipyardRepository) FinishDueShipyardQueues(ctx context.Context, until int) error {
+	return r.finishDueShipyardQueues(ctx, until, nil)
+}
+
+func (r ShipyardRepository) finishDueShipyardQueues(ctx context.Context, until int, guard *databaseMutationGuard) error {
 	if r.execer == nil {
 		return errors.New("shipyard updater unavailable")
 	}
@@ -76,13 +80,14 @@ func (r ShipyardRepository) FinishDueShipyardQueues(ctx context.Context, until i
 		return err
 	}
 	for _, task := range tasks {
-		_, err := finishDueQueueTaskAtomically(
+		_, err := finishDueQueueTaskAtomicallyWithGuard(
 			ctx,
 			r.queryer,
 			r.execer,
 			queueTable,
 			dueQueueTaskClaim{TaskID: task.TaskID, Type: task.Type, End: task.End},
 			until,
+			guard,
 			func(queryer Queryer, execer Execer) error {
 				claimed := r
 				claimed.queryer = queryer
@@ -231,13 +236,13 @@ func (r ShipyardRepository) mutateShipyardOrders(ctx context.Context, playerID i
 		return domaingame.BuildingActionIssue(domaingame.BuildingsIssueInvalid), nil
 	}
 
-	unlock, err := r.acquireShipyardMutationLock(ctx, playerID, planetID)
+	guard, err := r.acquireShipyardMutationGuard(ctx, playerID, planetID)
 	if err != nil {
 		return nil, err
 	}
-	defer unlock()
+	defer guard.Release()
 
-	if err := r.FinishDueShipyardQueues(ctx, now); err != nil {
+	if err := r.finishDueShipyardQueues(ctx, now, guard); err != nil {
 		return nil, err
 	}
 
@@ -281,15 +286,23 @@ func (r ShipyardRepository) mutateShipyardOrders(ctx context.Context, playerID i
 }
 
 func (r ShipyardRepository) acquireShipyardMutationLock(ctx context.Context, playerID int, planetID int) (func(), error) {
+	guard, err := r.acquireShipyardMutationGuard(ctx, playerID, planetID)
+	if err != nil {
+		return nil, err
+	}
+	return guard.Release, nil
+}
+
+func (r ShipyardRepository) acquireShipyardMutationGuard(ctx context.Context, playerID int, planetID int) (*databaseMutationGuard, error) {
 	db := (BuildingsRepository{queryer: r.queryer}).sqlDB()
 	if db == nil || playerID <= 0 {
-		return func() {}, nil
+		return &databaseMutationGuard{unlock: func() {}}, nil
 	}
 	lockName := fmt.Sprintf("%sshipyard:%d:%d", r.prefix, playerID, planetID)
 	if planetID <= 0 {
 		lockName = fmt.Sprintf("%sshipyard:%d", r.prefix, playerID)
 	}
-	return acquireDatabaseMutationLock(ctx, db, lockName, "shipyard mutation lock timeout")
+	return acquireDatabaseMutationGuard(ctx, db, lockName, "shipyard mutation lock timeout")
 }
 
 func (r ShipyardRepository) enqueueShipyardItem(ctx context.Context, state shipyardMutationState, item domaingame.ShipyardItem, requested int, now int) (*domaingame.BuildingsActionIssue, bool, error) {

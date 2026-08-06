@@ -288,6 +288,29 @@ func TestSQLiteRegisteredAccountCanQueueBuilding(t *testing.T) {
 	if _, err := db.Exec("UPDATE `uni1_queue` SET end = 0 WHERE owner_id = ?", account.PlayerID); err != nil {
 		t.Fatal(err)
 	}
+	mutationCtx, cancelMutation := context.WithTimeout(context.Background(), time.Second)
+	defer cancelMutation()
+	secondShipyardResult, err := mysqlgame.NewShipyardRepository(db, "uni1_").MutateShipyard(mutationCtx, appgame.ShipyardMutationQuery{
+		PlayerID: account.PlayerID,
+		PlanetID: account.HomePlanetID,
+		Orders:   map[int]int{domaingame.FleetLightFighter: 1},
+	})
+	if err != nil {
+		t.Fatalf("settle due SQLite shipyard queue while enqueuing the next order: %v", err)
+	}
+	if secondShipyardResult.ActionIssue != nil {
+		t.Fatalf("unexpected second SQLite shipyard issue: %s", *secondShipyardResult.ActionIssue)
+	}
+	var queuedShipyardOrders int
+	if err := db.QueryRow("SELECT COUNT(*) FROM `uni1_queue` WHERE owner_id = ? AND type = 'Shipyard'", account.PlayerID).Scan(&queuedShipyardOrders); err != nil {
+		t.Fatal(err)
+	}
+	if queuedShipyardOrders != 1 {
+		t.Fatalf("expected one replacement SQLite shipyard order, got %d", queuedShipyardOrders)
+	}
+	if _, err := db.Exec("UPDATE `uni1_queue` SET end = 0 WHERE owner_id = ?", account.PlayerID); err != nil {
+		t.Fatal(err)
+	}
 	if err := mysqlgame.NewShipyardRepository(db, "uni1_").FinishDueShipyardQueues(context.Background(), int(time.Now().Unix())); err != nil {
 		t.Fatalf("finish SQLite shipyard order: %v", err)
 	}
@@ -295,8 +318,8 @@ func TestSQLiteRegisteredAccountCanQueueBuilding(t *testing.T) {
 	if err := db.QueryRow("SELECT `204` FROM `uni1_planets` WHERE planet_id = ?", account.HomePlanetID).Scan(&lightFighters); err != nil {
 		t.Fatal(err)
 	}
-	if lightFighters != 1 {
-		t.Fatalf("expected completed SQLite light fighter, got %d", lightFighters)
+	if lightFighters != 2 {
+		t.Fatalf("expected both completed SQLite light fighters, got %d", lightFighters)
 	}
 }
 

@@ -7,6 +7,7 @@ import (
 	"fmt"
 	"strings"
 	"sync"
+	"sync/atomic"
 	"time"
 
 	appgame "github.com/hjyoon/ogame-opensource/backend/internal/application/game"
@@ -26,6 +27,43 @@ type BuildingsRepository struct {
 const buildQueueBatch = 16
 
 var processDatabaseLocks sync.Map
+
+const processDatabaseLockTimeout = 5 * time.Second
+
+// databaseMutationGuard proves that the caller currently owns the process-wide
+// SQLite mutation lock for one database pool. MySQL keeps its existing named
+// lock semantics, so only SQLite guards can cover nested queue settlement.
+//
+// The guard is intentionally unexported and non-copyable in practice: callers
+// receive a pointer and must keep it alive until Release. Queue helpers can
+// therefore avoid reacquiring the same non-reentrant SQLite lock without
+// weakening serialization for unrelated callers.
+type databaseMutationGuard struct {
+	sqliteDB *sql.DB
+	unlock   func()
+	once     sync.Once
+	released atomic.Bool
+}
+
+func (g *databaseMutationGuard) Release() {
+	if g == nil {
+		return
+	}
+	g.once.Do(func() {
+		g.released.Store(true)
+		if g.unlock != nil {
+			g.unlock()
+		}
+	})
+}
+
+func (g *databaseMutationGuard) coversSQLite(queryer Queryer) bool {
+	if g == nil || g.sqliteDB == nil || g.released.Load() {
+		return false
+	}
+	db := (BuildingsRepository{queryer: queryer}).sqlDB()
+	return db != nil && db == g.sqliteDB
+}
 
 func NewBuildingsRepository(db *sql.DB, prefix string) BuildingsRepository {
 	runner := SQLQueryer{DB: db}
@@ -316,15 +354,45 @@ func (r BuildingsRepository) acquireBuildingMutationLock(ctx context.Context, pl
 }
 
 func acquireDatabaseMutationLock(ctx context.Context, db *sql.DB, lockName string, timeoutMessage string) (func(), error) {
-	if detectSQLDialect(db) == DialectSQLite {
-		return acquireProcessDatabaseLock(ctx, db, lockName, timeoutMessage)
+	guard, err := acquireDatabaseMutationGuard(ctx, db, lockName, timeoutMessage)
+	if err != nil {
+		return nil, err
 	}
-	return acquireMySQLNamedLock(ctx, db, lockName, timeoutMessage)
+	return guard.Release, nil
+}
+
+func acquireDatabaseMutationGuard(ctx context.Context, db *sql.DB, lockName string, timeoutMessage string) (*databaseMutationGuard, error) {
+	var (
+		unlock func()
+		err    error
+	)
+	if detectSQLDialect(db) == DialectSQLite {
+		unlock, err = acquireProcessDatabaseLock(ctx, db, lockName, timeoutMessage)
+		if err != nil {
+			return nil, err
+		}
+		return &databaseMutationGuard{sqliteDB: db, unlock: unlock}, nil
+	}
+	unlock, err = acquireMySQLNamedLock(ctx, db, lockName, timeoutMessage)
+	if err != nil {
+		return nil, err
+	}
+	return &databaseMutationGuard{unlock: unlock}, nil
 }
 
 func acquireProcessDatabaseLock(ctx context.Context, db *sql.DB, lockName string, timeoutMessage string) (func(), error) {
+	return acquireProcessDatabaseLockWithin(ctx, db, lockName, processDatabaseLockTimeout, errors.New(timeoutMessage))
+}
+
+func acquireProcessDatabaseLockWithin(ctx context.Context, db *sql.DB, lockName string, wait time.Duration, timeoutErr error) (func(), error) {
 	if db == nil || lockName == "" {
 		return func() {}, nil
+	}
+	if wait <= 0 {
+		wait = time.Nanosecond
+	}
+	if timeoutErr == nil {
+		timeoutErr = errors.New("database mutation lock timeout")
 	}
 	created := make(chan struct{}, 1)
 	created <- struct{}{}
@@ -332,7 +400,7 @@ func acquireProcessDatabaseLock(ctx context.Context, db *sql.DB, lockName string
 	// pool also avoids retaining a lock entry for every player and planet.
 	value, _ := processDatabaseLocks.LoadOrStore(db, created)
 	lock := value.(chan struct{})
-	timer := time.NewTimer(5 * time.Second)
+	timer := time.NewTimer(wait)
 	defer timer.Stop()
 	select {
 	case <-lock:
@@ -341,7 +409,7 @@ func acquireProcessDatabaseLock(ctx context.Context, db *sql.DB, lockName string
 	case <-ctx.Done():
 		return nil, ctx.Err()
 	case <-timer.C:
-		return nil, errors.New(timeoutMessage)
+		return nil, timeoutErr
 	}
 }
 

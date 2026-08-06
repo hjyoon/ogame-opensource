@@ -2,6 +2,7 @@ package main
 
 import (
 	"context"
+	"errors"
 	"log/slog"
 	"net/http"
 	"os"
@@ -89,14 +90,11 @@ func startDueQueueWorker(ctx context.Context, cfg config.Config, logger *slog.Lo
 		defer close(done)
 		settle := func() {
 			settledAt := time.Now()
-			if err := settler.FinishDueQueues(ctx, int(settledAt.Unix())); err != nil {
-				if ctx.Err() == nil {
-					health.RecordFailure(settledAt)
-					logger.Error("due queue settlement failed", "universe", cfg.UniNumber, "error", err)
-				}
+			err := settler.FinishDueQueues(ctx, int(settledAt.Unix()))
+			if ctx.Err() != nil {
 				return
 			}
-			health.RecordSuccess(settledAt)
+			recordDueQueueSettlement(logger, health, cfg.UniNumber, cfg.QueuePollIntervalMS, settledAt, err)
 		}
 		settle()
 		ticker := time.NewTicker(interval)
@@ -112,6 +110,31 @@ func startDueQueueWorker(ctx context.Context, cfg config.Config, logger *slog.Lo
 	}()
 	logger.Info("due queue worker enabled", "universe", cfg.UniNumber, "interval_ms", cfg.QueuePollIntervalMS)
 	return done
+}
+
+func recordDueQueueSettlement(logger *slog.Logger, health *infraruntime.QueueWorkerHealthTracker, universe int, retryMS int, at time.Time, err error) {
+	if errors.Is(err, mysqlgame.ErrQueueSettlementBusy) {
+		health.RecordDeferred(at)
+		logger.Debug(
+			"due queue settlement deferred",
+			"event", "queue_settlement_deferred",
+			"universe", universe,
+			"reason", "database_lock_busy",
+			"retry_ms", retryMS,
+		)
+		return
+	}
+	if err != nil {
+		health.RecordFailure(at)
+		logger.Error(
+			"due queue settlement failed",
+			"event", "queue_settlement_failed",
+			"universe", universe,
+			"error", err,
+		)
+		return
+	}
+	health.RecordSuccess(at)
 }
 
 func setServerTimezone() {

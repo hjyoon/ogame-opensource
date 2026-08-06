@@ -32,12 +32,19 @@ func NewRuntimeQueueSettler(db *sql.DB, prefix string) RuntimeQueueSettler {
 }
 
 func (s RuntimeQueueSettler) FinishDueQueues(ctx context.Context, until int) error {
+	ctx = withRuntimeQueueCompletionPolicy(ctx)
 	var joined error
 	for _, finish := range s.finishers {
 		if finish == nil {
 			continue
 		}
-		joined = errors.Join(joined, finish(ctx, until))
+		err := finish(ctx, until)
+		if errors.Is(err, ErrQueueSettlementBusy) {
+			// User-facing mutations take priority over the periodic worker. The
+			// next tick will re-read and revalidate every still-due task.
+			return err
+		}
+		joined = errors.Join(joined, err)
 	}
 	return joined
 }

@@ -122,6 +122,77 @@ func TestFinishDueQueueTaskAtomicallySharesSQLiteMutationLock(t *testing.T) {
 	}
 }
 
+func TestFinishDueQueueTaskAtomicallyReusesOwnedSQLiteMutationGuard(t *testing.T) {
+	db := openQueueCompletionSQLite(t)
+	defer db.Close()
+	if _, err := db.Exec("INSERT INTO uni1_queue (task_id, owner_id, type, sub_id, obj_id, level, start, end, prio, freeze, frozen) VALUES (79, 1, 'Fleet', 9, 0, 0, 0, 100, 0, 0, 0)"); err != nil {
+		t.Fatal(err)
+	}
+
+	guard, err := acquireDatabaseMutationGuard(context.Background(), db, "mutation", "mutation lock timeout")
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer guard.Release()
+
+	runner := SQLQueryer{DB: db}
+	claimed, err := finishDueQueueTaskAtomicallyWithGuard(
+		context.Background(),
+		runner,
+		runner,
+		"`uni1_queue`",
+		dueQueueTaskClaim{TaskID: 79, Type: queueTypeFleet, End: 100},
+		100,
+		guard,
+		func(_ Queryer, execer Execer) error {
+			_, err := execer.ExecContext(context.Background(), "DELETE FROM uni1_queue WHERE task_id = ?", 79)
+			return err
+		},
+	)
+	if err != nil || !claimed {
+		t.Fatalf("guarded queue completion failed: claimed=%v err=%v", claimed, err)
+	}
+	assertQueueCompletionCount(t, db, "SELECT COUNT(*) FROM uni1_queue WHERE task_id = 79", 0)
+
+	guard.Release()
+	if guard.coversSQLite(runner) {
+		t.Fatal("released mutation guard must not cover later queue work")
+	}
+}
+
+func TestRuntimeQueueCompletionDefersQuicklyWhenSQLiteMutationIsBusy(t *testing.T) {
+	db := openQueueCompletionSQLite(t)
+	defer db.Close()
+	if _, err := db.Exec("INSERT INTO uni1_queue (task_id, owner_id, type, sub_id, obj_id, level, start, end, prio, freeze, frozen) VALUES (80, 1, 'Fleet', 9, 0, 0, 0, 100, 0, 0, 0)"); err != nil {
+		t.Fatal(err)
+	}
+
+	unlock, err := acquireProcessDatabaseLock(context.Background(), db, "mutation", "mutation lock timeout")
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer unlock()
+
+	runner := SQLQueryer{DB: db}
+	started := time.Now()
+	claimed, err := finishDueQueueTaskAtomically(
+		withRuntimeQueueCompletionPolicy(context.Background()),
+		runner,
+		runner,
+		"`uni1_queue`",
+		dueQueueTaskClaim{TaskID: 80, Type: queueTypeFleet, End: 100},
+		100,
+		func(Queryer, Execer) error { return nil },
+	)
+	if claimed || !errors.Is(err, ErrQueueSettlementBusy) {
+		t.Fatalf("expected adaptive busy deferral, claimed=%v err=%v", claimed, err)
+	}
+	if elapsed := time.Since(started); elapsed >= time.Second {
+		t.Fatalf("runtime queue worker waited too long for a busy mutation lock: %s", elapsed)
+	}
+	assertQueueCompletionCount(t, db, "SELECT COUNT(*) FROM uni1_queue WHERE task_id = 80", 1)
+}
+
 func TestFinishDueQueueTaskAtomicallyRollsBackClaimAndSideEffects(t *testing.T) {
 	db := openQueueCompletionSQLite(t)
 	defer db.Close()

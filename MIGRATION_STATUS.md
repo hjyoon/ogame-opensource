@@ -1,6 +1,6 @@
 # Migration Status
 
-Updated: 2026-08-02 KST, branch `hjyoon/golang`.
+Updated: 2026-08-06 KST, branch `hjyoon/golang`.
 
 React/Bun + Go migration tracker. Keep under 4KB; split details by topic.
 
@@ -14,7 +14,7 @@ React/Bun + Go migration tracker. Keep under 4KB; split details by topic.
 - Game mutations preserve math, permissions, effects, reports, and scheduler behavior through PHP/Go differential cases; due queues are atomically settled by a configurable background worker.
 - MCP supports scoped tokens, paged Commander message filters, zero-percent production, projected affordability, empire aggregates, queue health, and live per-token/IP-guard throttle status.
 - The Go runtime supports MySQL by default and persistent SQLite as an optional pure-Go mode; see [SQLite](./SQLITE.md).
-- SQLite due-queue settlement shares the mutation lock; bootstrap honors legacy universe environment settings, and Overview failures use JSON logs.
+- SQLite queue settlement reuses an owned mutation guard while its worker yields busy locks; bootstrap honors legacy universe settings and Overview logs JSON errors.
 - One multi-target `Dockerfile` and one `docker-compose.yml` define the PHP oracle and both Go database modes.
 - Modernization candidates stay in [MODERNIZATION_OPTIONS.md](./MODERNIZATION_OPTIONS.md).
 
@@ -43,7 +43,7 @@ OGAME_RUN_LEGACY_E2E=1 OGAME_GO_PORT=8890 OGAME_KEEP_GO_DOCKER=1 testing/e2e/run
 
 SQLite focused QA passes bootstrap, authenticated HTTP, registration/build mutation, queue completion, MCP/OAuth, coupons, Admin cron, and backup/restore. The full PHP differential baseline above remains MySQL-backed.
 
-The 2026-08-02 focused backend run passed `go test ./...` and the 97.0% internal coverage gate.
+The 2026-08-06 focused backend run passed `go test ./...`, queue race tests, and the 97.0% internal coverage gate.
 
 ## Completion Statement
 

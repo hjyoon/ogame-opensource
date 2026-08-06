@@ -2,8 +2,26 @@ package mysqlgame
 
 import (
 	"context"
+	"errors"
 	"fmt"
+	"time"
 )
+
+var ErrQueueSettlementBusy = errors.New("queue settlement busy")
+
+const runtimeQueueCompletionLockWait = 50 * time.Millisecond
+
+type queueCompletionLockPolicy struct {
+	wait time.Duration
+}
+
+type queueCompletionLockPolicyKey struct{}
+
+func withRuntimeQueueCompletionPolicy(ctx context.Context) context.Context {
+	return context.WithValue(ctx, queueCompletionLockPolicyKey{}, queueCompletionLockPolicy{
+		wait: runtimeQueueCompletionLockWait,
+	})
+}
 
 type dueQueueTaskClaim struct {
 	TaskID      int
@@ -23,11 +41,26 @@ func finishDueQueueTaskAtomically(
 	until int,
 	finish func(Queryer, Execer) error,
 ) (bool, error) {
-	unlock, err := acquireQueueCompletionLock(ctx, queryer)
-	if err != nil {
-		return false, err
+	return finishDueQueueTaskAtomicallyWithGuard(ctx, queryer, execer, queueTable, claim, until, nil, finish)
+}
+
+func finishDueQueueTaskAtomicallyWithGuard(
+	ctx context.Context,
+	queryer Queryer,
+	execer Execer,
+	queueTable string,
+	claim dueQueueTaskClaim,
+	until int,
+	guard *databaseMutationGuard,
+	finish func(Queryer, Execer) error,
+) (bool, error) {
+	if !guard.coversSQLite(queryer) {
+		unlock, err := acquireQueueCompletionLock(ctx, queryer)
+		if err != nil {
+			return false, err
+		}
+		defer unlock()
 	}
-	defer unlock()
 
 	txer := queueTransactionRunner(queryer, execer)
 	if txer == nil {
@@ -37,7 +70,7 @@ func finishDueQueueTaskAtomically(
 	}
 
 	claimed := false
-	err = txer.WithTransaction(ctx, func(txQueryer Queryer, txExecer Execer) error {
+	err := txer.WithTransaction(ctx, func(txQueryer Queryer, txExecer Execer) error {
 		ok, err := claimDueQueueTask(ctx, txQueryer, txExecer, queueTable, claim, until)
 		if err != nil || !ok {
 			return err
@@ -52,6 +85,10 @@ func acquireQueueCompletionLock(ctx context.Context, queryer Queryer) (func(), e
 	db := (BuildingsRepository{queryer: queryer}).sqlDB()
 	if db == nil || detectSQLDialect(db) != DialectSQLite {
 		return func() {}, nil
+	}
+	if policy, ok := ctx.Value(queueCompletionLockPolicyKey{}).(queueCompletionLockPolicy); ok && policy.wait > 0 {
+		busy := fmt.Errorf("%w: queue completion lock unavailable after %s", ErrQueueSettlementBusy, policy.wait)
+		return acquireProcessDatabaseLockWithin(ctx, db, "queue-completion", policy.wait, busy)
 	}
 	return acquireProcessDatabaseLock(ctx, db, "queue-completion", "queue completion lock timeout")
 }

@@ -50,6 +50,18 @@ func (t *QueueWorkerHealthTracker) RecordFailure(at time.Time) {
 	t.mu.Unlock()
 }
 
+// RecordDeferred marks a healthy worker tick that deliberately yielded to an
+// interactive mutation. It advances observability without claiming queue
+// progress or turning expected SQLite lock contention into a failure.
+func (t *QueueWorkerHealthTracker) RecordDeferred(at time.Time) {
+	if t == nil {
+		return
+	}
+	t.mu.Lock()
+	t.lastAttempt = at
+	t.mu.Unlock()
+}
+
 func (t *QueueWorkerHealthTracker) Status() domainsystem.QueueWorkerHealth {
 	if t == nil {
 		return domainsystem.QueueWorkerHealth{Ready: true}
